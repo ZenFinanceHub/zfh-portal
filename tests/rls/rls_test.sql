@@ -8,11 +8,11 @@ set client_min_messages = warning;
 
 -- ── Fixtures (as superuser) ─────────────────────────────────
 insert into auth.users (id, email) values
-  ('00000000-0000-0000-0000-00000000000a', 'craig@zen-finance.co.uk'),
+  ('00000000-0000-0000-0000-00000000000a', 'admin.test@example.com'),
   ('00000000-0000-0000-0000-0000000000a1', 'owner.a@example.com'),
   ('00000000-0000-0000-0000-0000000000a2', 'bookkeeper.a@example.com'),
   ('00000000-0000-0000-0000-0000000000b1', 'owner.b@example.com');
-update public.profiles set is_staff = true, staff_role = 'admin' where email = 'craig@zen-finance.co.uk';
+update public.profiles set is_staff = true, staff_role = 'admin' where email = 'admin.test@example.com';
 
 insert into public.clients (id, name, entity_type) values
   ('aaaaaaaa-0000-0000-0000-000000000000', 'Alpha Ltd', 'limited_company'),

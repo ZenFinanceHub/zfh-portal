@@ -12,7 +12,9 @@ export async function GET(request: NextRequest) {
   const supabase = await createClient();
   const code = searchParams.get("code");
   const tokenHash = searchParams.get("token_hash");
-  const type = searchParams.get("type") as EmailOtpType | null;
+  // Only magic-link token types are accepted here (not invite, recovery, email change…).
+  const rawType = searchParams.get("type");
+  const type: EmailOtpType | null = rawType === "magiclink" || rawType === "email" ? rawType : null;
 
   let error;
   if (code) {
