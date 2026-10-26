@@ -7,7 +7,7 @@ import {
   getLocal,
   magicLinkToken,
 } from "../../scripts/local-supabase.mjs";
-import { accessTokenOf, signInAs, signInAsStaffWithMfa } from "./helpers";
+import { accessTokenOf, expectReceived, signInAs, signInAsStaffWithMfa } from "./helpers";
 
 // Files: scanning, staff documents, zips and retention. Runs on a 375px phone.
 // The local scan-file function uses the "mock" scanner (basic checks, plus the EICAR test string counts as a virus).
@@ -127,7 +127,7 @@ test("staff shares a document with an approval; the client can approve once it i
   await expect(page.getByRole("link", { name: "Draft accounts.pdf" })).toBeVisible();
   await expect(page.getByRole("button", { name: "I approve" })).toBeEnabled();
   await page.getByRole("button", { name: "I approve" }).click();
-  await expect(page.getByText("Received — nothing more needed from you")).toBeVisible();
+  await expectReceived(page);
   const { data: req } = await admin.from("requests").select("status").eq("id", approvalId).single();
   expect(req?.status).toBe("submitted");
 });
@@ -160,7 +160,7 @@ test("a client cannot approve until the attached document is clean", async ({ pa
   await expect(page.getByRole("link", { name: "draft.pdf" })).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("button", { name: "I approve" })).toBeEnabled();
   await page.getByRole("button", { name: "I approve" }).click();
-  await expect(page.getByText("Received — nothing more needed from you")).toBeVisible();
+  await expectReceived(page);
 });
 
 test("an internal document is never visible to the client, and sharing it later is audited", async ({ page, browser }) => {

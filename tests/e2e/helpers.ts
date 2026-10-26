@@ -52,3 +52,21 @@ export async function accessTokenOf(page: Page): Promise<string> {
   const session = JSON.parse(Buffer.from(joined, "base64url").toString("utf8"));
   return session.access_token as string;
 }
+
+/**
+ * The confirmation after sending something. It depends on what is left to do: either a count with "Back to my list",
+ * or "That's everything for now" with "Back to home". Pass `more` when the test knows which one to expect.
+ */
+export async function expectReceived(page: Page, more?: boolean) {
+  const status = page.getByRole("status").filter({ hasText: "Received — thank you." });
+  await expect(status).toBeVisible();
+  await expect(status).not.toContainText("nothing more needed");
+  const remaining = status.getByText(/You have \d+ more things? to do/);
+  const everything = status.getByText("That's everything for now.");
+  if (more === true) await expect(remaining).toBeVisible();
+  else if (more === false) await expect(everything).toBeVisible();
+  else await expect(remaining.or(everything)).toBeVisible();
+  const link = status.getByRole("link", { name: /Back to (my list|home)/ });
+  if ((await remaining.count()) > 0) await expect(link).toHaveText("Back to my list");
+  else await expect(link).toHaveText("Back to home");
+}

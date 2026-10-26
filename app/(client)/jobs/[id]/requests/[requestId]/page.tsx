@@ -8,6 +8,7 @@ import { UploadRequest } from "./upload-request";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { cardClass, primaryButtonInlineClass } from "@/components/ui/styles";
 import { CONSENTS } from "@/lib/consents";
+import { countOpenItems } from "@/lib/client/open-items";
 import { formatDate } from "@/lib/labels";
 import { createClient } from "@/lib/supabase/server";
 import type { QuestionType } from "@/lib/validation/answers";
@@ -50,21 +51,40 @@ export default async function RequestPage({
 
   // ── Already sent, finished, or no longer needed ──────────
   if (!isOpen) {
-    const message =
-      request.status === "cancelled"
-        ? "This is no longer needed. You don't need to do anything."
-        : request.status === "accepted"
-          ? "Done — thank you. Nothing more needed from you."
-          : "Received — nothing more needed from you";
+    if (request.status === "cancelled") {
+      return (
+        <>
+          {back}
+          <h1 className="mb-4 text-2xl font-semibold sm:text-3xl">{request.title}</h1>
+          <div className={`${cardClass} space-y-4`} role="status">
+            <p className="text-lg font-semibold text-gold-light">
+              This is no longer needed. You don&apos;t need to do anything.
+            </p>
+            <Link href="/" className={primaryButtonInlineClass}>
+              Back to things to do
+            </Link>
+          </div>
+        </>
+      );
+    }
+    const remaining = await countOpenItems(supabase, auth.user!.id);
     return (
       <>
         {back}
         <h1 className="mb-4 text-2xl font-semibold sm:text-3xl">{request.title}</h1>
         <div className={`${cardClass} space-y-4`} role="status">
-          <p className="text-lg font-semibold text-gold-light">{message}</p>
-          <p className="text-text-muted">We&apos;ll be in touch if we need anything else.</p>
+          <p className="text-lg font-semibold text-gold-light">
+            {remaining > 0 ? "Received — thank you." : "Received — thank you. That's everything for now."}
+          </p>
+          {remaining > 0 ? (
+            <p className="text-text-muted">
+              {remaining === 1 ? "You have 1 more thing to do" : `You have ${remaining} more things to do`}
+            </p>
+          ) : (
+            <p className="text-text-muted">We&apos;ll be in touch if we need anything else.</p>
+          )}
           <Link href="/" className={primaryButtonInlineClass}>
-            Back to things to do
+            {remaining > 0 ? "Back to my list" : "Back to home"}
           </Link>
         </div>
       </>

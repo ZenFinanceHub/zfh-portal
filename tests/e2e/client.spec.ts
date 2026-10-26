@@ -9,7 +9,7 @@ import {
 } from "../../scripts/local-supabase.mjs";
 import { formatAnswer } from "../../lib/answers";
 import { addDays, todayLondon } from "../../lib/dates";
-import { signInAs, signInAsStaffWithMfa } from "./helpers";
+import { expectReceived, signInAs, signInAsStaffWithMfa } from "./helpers";
 
 // Everything here runs on a 375px-wide phone.
 test.use({ viewport: { width: 375, height: 667 }, isMobile: true, hasTouch: true });
@@ -95,7 +95,7 @@ test("client uploads files and sends them; rejected files get friendly messages"
   await noSideways(page);
 
   await page.getByRole("button", { name: "Send to ZenFinanceHub" }).click();
-  await expect(page.getByText("Received — nothing more needed from you")).toBeVisible();
+  await expectReceived(page);
 
   // Stored the way CLAUDE.md says: row first (pending), then the object at {client}/{job}/{file}-{name}.
   // The scan-file function may already have checked it by now.
@@ -139,7 +139,7 @@ test("client answers questions: £ amount with autosave, and yes / no", async ({
   await expect(page.getByLabel("Your answer")).toHaveValue("£1,234.50");
 
   await page.getByRole("button", { name: "Send to ZenFinanceHub" }).click();
-  await expect(page.getByText("Received — nothing more needed from you")).toBeVisible();
+  await expectReceived(page, true);
   const { data: draft } = await page.evaluate((id) => ({ data: window.localStorage.getItem(`zfh-draft:${id}`) }), amountReq.id);
   expect(draft).toBeNull(); // draft cleared on submit
 
@@ -150,7 +150,7 @@ test("client answers questions: £ amount with autosave, and yes / no", async ({
   await page.goto(`/jobs/${s.jobId}/requests/${yesNoReq.id}`);
   await page.getByText("Yes", { exact: true }).click();
   await page.getByRole("button", { name: "Send to ZenFinanceHub" }).click();
-  await expect(page.getByText("Received — nothing more needed from you")).toBeVisible();
+  await expectReceived(page);
   const { data: yn } = await admin.from("responses").select("answer").eq("request_id", yesNoReq.id).single();
   expect(yn?.answer).toEqual({ value: true });
   expect(formatAnswer(yn!.answer, "yes_no")).toBe("Yes");
@@ -185,7 +185,7 @@ test("a contributor cannot approve; the owner can", async ({ page }) => {
   await signInAs(page, s.ownerEmail);
   await page.goto(`/jobs/${s.jobId}/requests/${approvalId}`);
   await page.getByRole("button", { name: "I approve" }).click();
-  await expect(page.getByText("Received — nothing more needed from you")).toBeVisible();
+  await expectReceived(page);
 });
 
 test("a client cannot open another client's job by changing the address", async ({ page }) => {
@@ -315,7 +315,7 @@ test("an owner gives a consent with the server's wording; a returned request sho
   await expect(page.getByRole("button", { name: "I agree" })).toBeDisabled();
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "I agree" }).click();
-  await expect(page.getByText("Received — nothing more needed from you")).toBeVisible();
+  await expectReceived(page);
 
   const { data: consent } = await admin.from("consents").select("*").eq("request_id", consentId).single();
   expect(consent?.consent_type).toBe("lender_share");
