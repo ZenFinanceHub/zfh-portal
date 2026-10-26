@@ -13,7 +13,7 @@ CLAUDE.md sits in the repo root, so Claude Code already knows the rules, brand a
 4. In Supabase → Authentication → Providers → Email: turn **off** "Allow new users to sign up". Turn **on** MFA (TOTP).
 5. Create a Vercel project from the repo; set function region `lhr1`.
 6. DNS: add `portal.zenfinancehub.com` as a CNAME to Vercel.
-7. Postmark (or Resend): create a server, verify `zenfinancehub.com` (SPF, DKIM, DMARC).
+7. ~~Email provider~~ — done: Resend is already verified on zenfinancehub.com. Create a Resend API key for the portal when you reach Prompt 7 and store it only as a Supabase Edge Function secret.
 
 ---
 
@@ -134,7 +134,7 @@ Test at 375px. No session timeouts for clients.
 ## Prompt 7 — Notifications
 
 ```
-- Edge function send-notifications (Postmark), modes:
+- Edge function send-notifications (Resend, API key from Edge Function secret RESEND_API_KEY, Reply-To craig@zen-finance.co.uk), modes:
   1. new_request: email each contact who can see the job: subject "You have something to do",
      body = one line + button to portal. No titles, amounts or names of documents.
   2. reminders: daily, open requests due in 7, 3 or 1 days → one email per contact listing only the count
@@ -157,7 +157,7 @@ Test at 375px. No session timeouts for clients.
   data in URLs/logs/emails, missing RLS tests, CSP. Fix what you find and list it.
 - Rate-limit magic-link requests (per IP and per email)
 - Error pages in brand style; no stack traces to the browser
-- Production checklist in README: env vars, Supabase backups (enable PITR if budget allows), Postmark
+- Production checklist in README: env vars, Supabase backups (enable PITR if budget allows), Resend
   domain, Vercel region, DNS, making the first admin
 ```
 
