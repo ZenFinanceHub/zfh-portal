@@ -8,3 +8,4 @@ supabase/.branches/
 .vercel/
 *.log
 .DS_Store
+*.tsbuildinfo
