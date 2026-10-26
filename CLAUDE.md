@@ -44,6 +44,10 @@ tests/rls/           RLS tests that must pass before any real client data goes i
 - Brokerage jobs (`service = finance_application`) also carry `finance_stage`: gathering → submitted → credit_decision → offer → completed/declined.
 - Regulated referrals capture the minimum fact-find plus explicit consent, then hand off. The portal must never word anything as regulated advice.
 - UK English, dates DD/MM/YYYY, money in GBP (£1,234.56), Europe/London time zone.
+- **Areas (Accounting and Business Finance):** every job has an `area`, derived from `service` and never set by hand: `finance_application` and `regulated_referral` → `finance`; every other service → `accounting`. It is a generated column (`jobs.area`, also `templates.area`) so it cannot drift. Clients see the labels "Accounting" and "Business Finance"; the brand is ZenFinanceHub throughout.
+  - Clients with jobs in both areas get an "Accounting | Business Finance" tab bar on Things to do, Documents and Messages (no tab bar with only one area). The last tab is remembered per device.
+  - Staff access is by area, enforced in RLS: `profiles.staff_areas` (`accounting`, `finance`). Admin always has both. New staff start with none and see nothing until the admin grants an area (/admin/settings → Staff; changes are audited). Staff see a client only if they can access an area that client has a job in, or the client has no jobs yet. `staff_can_access_area()` / `staff_can_access_job()` are the helpers every staff policy and RPC uses.
+  - The finance pipeline (`finance_stage`) is only shown in the Finance view.
 
 ## Security rules (non-negotiable)
 - RLS is the security boundary. Every table has RLS on; never disable it, never query with the service role from browser or server components.
@@ -57,9 +61,18 @@ tests/rls/           RLS tests that must pass before any real client data goes i
 - Every schema change ships as a new migration with RLS policies **and** matching tests in `tests/rls/`.
 
 ## Notifications
-- New request → email to client contacts on that job.
+To clients:
+- New request → email to client contacts on that job ("You have something to do" + link, nothing more).
 - Reminders 7, 3 and 1 days before `due_date` for open requests (pg_cron daily 08:00 Europe/London → `send-notifications` edge function).
-- Client uploads, answers, approvals and consents → email to **craig@zen-finance.co.uk** (option for a daily digest at 17:00 instead).
+
+To staff (rules set by Craig, built in Prompt 7):
+- **Batching:** when a client submits (upload or question) or sends a message, send ONE email per client per batch, 15 minutes after that client's last activity, e.g. "Alpha Ltd sent 3 items and 1 message on the Year-end job". Never one email per file.
+- **Urgent — sent immediately, even in quiet hours:** approvals, `lender_share` consents, and any upload or submit on a `finance_application` job.
+- **Quiet hours:** 18:00–08:00 Europe/London, plus Saturday and Sunday, plus UK bank holidays (from an editable table). Non-urgent alerts are held and sent as one email at 08:00 on the next working day.
+- **Routing:** to the job's assigned staff member; if none is assigned, to craig@zen-finance.co.uk.
+- **Daily digest:** to craig@zen-finance.co.uk at 17:00 on working days, grouped by area (Accounting, Business Finance), then by client. Skipped if nothing happened.
+- **Content:** client name, job title, kind and count of items, and a link. NEVER file names, answers, amounts or message text.
+- **Settings and log:** the rules live in a `notification_settings` table, editable at `/admin/settings`. Every send is recorded in `notifications_log` to prevent duplicates.
 
 ## Definition of done for any feature
 1. Types generated, `tsc --noEmit` clean, lint clean

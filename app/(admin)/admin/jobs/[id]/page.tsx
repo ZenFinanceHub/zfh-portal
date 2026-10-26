@@ -15,6 +15,7 @@ import {
 import { AddRequest, EditRequest, NoteForm, ReturnForm } from "./request-forms";
 import { cardClass, inputClass, secondaryButtonClass } from "@/components/ui/styles";
 import { formatAnswer } from "@/lib/answers";
+import { AREA_LABELS, isArea } from "@/lib/areas";
 import { todayLondon } from "@/lib/dates";
 import { STAGE_LABELS, formatDate } from "@/lib/labels";
 import { createClient } from "@/lib/supabase/server";
@@ -86,7 +87,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
         </Link>
         <h1 className="mt-1 text-2xl font-semibold sm:text-3xl">{job.title}</h1>
         <p className="text-text-muted">
-          {SERVICE_LABELS[job.service]} · Period end {formatDate(job.period_end)} · Due {formatDate(job.due_date)} ·
+          {isArea(job.area) ? `${AREA_LABELS[job.area]} · ` : ""}{SERVICE_LABELS[job.service]} · Period end {formatDate(job.period_end)} · Due {formatDate(job.due_date)} ·
           Assigned to {job.assignee?.full_name || job.assignee?.email || "no one"}
         </p>
         {(contributors ?? []).length > 0 ? (

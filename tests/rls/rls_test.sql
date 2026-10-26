@@ -499,6 +499,242 @@ do $$ begin
 exception when insufficient_privilege then raise notice 'ok  anonymous users cannot discard uploads';
 end $$;
 
+-- ── Areas: Accounting and Finance (migration 0004) ──────────
+reset role;
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-0000000000d1', 'staff.acc@example.com'),
+  ('00000000-0000-0000-0000-0000000000d2', 'staff.fin@example.com'),
+  ('00000000-0000-0000-0000-0000000000d3', 'staff.none@example.com'),
+  ('00000000-0000-0000-0000-0000000000e1', 'mixed.owner@example.com'),
+  ('00000000-0000-0000-0000-0000000000e2', 'finonly.owner@example.com');
+update public.profiles set is_staff = true, staff_role = 'staff', staff_areas = array['accounting']
+ where email = 'staff.acc@example.com';
+update public.profiles set is_staff = true, staff_role = 'staff', staff_areas = array['finance']
+ where email = 'staff.fin@example.com';
+update public.profiles set is_staff = true, staff_role = 'staff'
+ where email = 'staff.none@example.com';
+
+insert into public.clients (id, name, entity_type) values
+  ('a3a3a3a3-0000-0000-0000-000000000000', 'Mixed Ltd',   'limited_company'),
+  ('f3f3f3f3-0000-0000-0000-000000000000', 'FinOnly Ltd', 'limited_company'),
+  ('a4a4a4a4-0000-0000-0000-000000000000', 'Jobless Ltd', 'limited_company');
+insert into public.client_contacts (client_id, profile_id, role) values
+  ('a3a3a3a3-0000-0000-0000-000000000000', '00000000-0000-0000-0000-0000000000e1', 'owner'),
+  ('f3f3f3f3-0000-0000-0000-000000000000', '00000000-0000-0000-0000-0000000000e2', 'owner');
+insert into public.jobs (id, client_id, title, service) values
+  ('a1a1a1a1-0000-0000-0000-000000000001', 'a3a3a3a3-0000-0000-0000-000000000000', 'Mixed bookkeeping', 'bookkeeping'),
+  ('f2f2f2f2-0000-0000-0000-000000000001', 'a3a3a3a3-0000-0000-0000-000000000000', 'Mixed finance application', 'finance_application'),
+  ('f2f2f2f2-0000-0000-0000-000000000002', 'f3f3f3f3-0000-0000-0000-000000000000', 'FinOnly referral', 'regulated_referral');
+insert into public.requests (id, job_id, kind, title, question_type) values
+  ('a1a1a1a1-1111-0000-0000-000000000001', 'a1a1a1a1-0000-0000-0000-000000000001', 'question', 'Accounting question', 'text'),
+  ('f2f2f2f2-1111-0000-0000-000000000001', 'f2f2f2f2-0000-0000-0000-000000000001', 'question', 'Finance question', 'text'),
+  ('f2f2f2f2-1111-0000-0000-000000000002', 'f2f2f2f2-0000-0000-0000-000000000002', 'question', 'Referral question', 'text');
+insert into public.responses (request_id, author_id, answer) values
+  ('a1a1a1a1-1111-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000e1', '{"value":"acc"}'),
+  ('f2f2f2f2-1111-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000e1', '{"value":"fin"}');
+insert into public.files (id, client_id, job_id, storage_path, original_name, uploaded_by, scan_status) values
+  ('a1a1a1a1-f000-0000-0000-000000000001', 'a3a3a3a3-0000-0000-0000-000000000000', 'a1a1a1a1-0000-0000-0000-000000000001',
+   'a3a3a3a3-0000-0000-0000-000000000000/a1a1a1a1-0000-0000-0000-000000000001/a1-acc.pdf', 'acc.pdf',
+   '00000000-0000-0000-0000-0000000000e1', 'clean'),
+  ('f2f2f2f2-f000-0000-0000-000000000001', 'a3a3a3a3-0000-0000-0000-000000000000', 'f2f2f2f2-0000-0000-0000-000000000001',
+   'a3a3a3a3-0000-0000-0000-000000000000/f2f2f2f2-0000-0000-0000-000000000001/f2-fin.pdf', 'fin.pdf',
+   '00000000-0000-0000-0000-0000000000e1', 'clean');
+insert into storage.objects (bucket_id, name) values
+  ('client-files', 'a3a3a3a3-0000-0000-0000-000000000000/a1a1a1a1-0000-0000-0000-000000000001/a1-acc.pdf'),
+  ('client-files', 'a3a3a3a3-0000-0000-0000-000000000000/f2f2f2f2-0000-0000-0000-000000000001/f2-fin.pdf');
+insert into public.messages (job_id, author_id, body, internal) values
+  ('a1a1a1a1-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000000a', 'Accounting note', true),
+  ('a1a1a1a1-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000000a', 'Accounting hello', false),
+  ('f2f2f2f2-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000000a', 'Finance note', true),
+  ('f2f2f2f2-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000000a', 'Finance hello', false);
+insert into public.consents (client_id, job_id, request_id, profile_id, consent_type, wording_version, wording_text) values
+  ('a3a3a3a3-0000-0000-0000-000000000000', 'a1a1a1a1-0000-0000-0000-000000000001', 'a1a1a1a1-1111-0000-0000-000000000001',
+   '00000000-0000-0000-0000-0000000000e1', 'engagement_letter', 'test', 'accounting consent'),
+  ('a3a3a3a3-0000-0000-0000-000000000000', 'f2f2f2f2-0000-0000-0000-000000000001', 'f2f2f2f2-1111-0000-0000-000000000001',
+   '00000000-0000-0000-0000-0000000000e1', 'lender_share', 'test', 'finance consent');
+insert into public.templates (id, name, service, requests) values
+  ('dddddddd-0000-0000-0000-000000000001', 'RLS finance fixture template', 'finance_application',
+   '[{"kind":"upload","title":"Bank statements","due_offset_days":7}]'::jsonb);
+
+-- Everything that exists right now, so "admin sees everything" does not assume an empty database.
+create temp table pg_temp.areatotals as
+  select (select count(*) from public.clients)        as clients,
+         (select count(*) from public.jobs)           as jobs,
+         (select count(*) from public.requests)       as requests,
+         (select count(*) from public.responses)      as responses,
+         (select count(*) from public.files)          as files,
+         (select count(*) from public.messages)       as messages,
+         (select count(*) from public.consents)       as consents,
+         (select count(*) from storage.objects)       as objects;
+grant select on pg_temp.areatotals to authenticated;
+
+-- helpers: run a statement as the current role and report what happened
+create or replace function pg_temp.changed(sql text) returns int language plpgsql as $$
+declare n int;
+begin execute sql; get diagnostics n = row_count; return n; end $$;
+create or replace function pg_temp.denied(sql text) returns boolean language plpgsql as $$
+begin execute sql; return false;
+exception when insufficient_privilege then return true; end $$;
+
+-- What the current person can see of one job: jobs, requests, responses, files, messages, consents, storage objects.
+create or replace function pg_temp.seen(job uuid) returns text language sql as $$
+  select concat_ws(',',
+    (select count(*) from public.jobs where id = job),
+    (select count(*) from public.requests where job_id = job),
+    (select count(*) from public.responses r join public.requests q on q.id = r.request_id where q.job_id = job),
+    (select count(*) from public.files where job_id = job),
+    (select count(*) from public.messages where job_id = job),
+    (select count(*) from public.consents where job_id = job),
+    (select count(*) from storage.objects o join public.files f on f.storage_path = o.name where f.job_id = job)
+  )
+$$;
+
+set role authenticated;
+
+-- Admin sees everything, in both areas.
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select pg_temp.check(
+  (select count(*) from public.jobs)      = (select jobs      from pg_temp.areatotals)
+  and (select count(*) from public.clients)   = (select clients   from pg_temp.areatotals)
+  and (select count(*) from public.requests)  = (select requests  from pg_temp.areatotals)
+  and (select count(*) from public.responses) = (select responses from pg_temp.areatotals)
+  and (select count(*) from public.files)     = (select files     from pg_temp.areatotals)
+  and (select count(*) from public.messages)  = (select messages  from pg_temp.areatotals)
+  and (select count(*) from public.consents)  = (select consents  from pg_temp.areatotals)
+  and (select count(*) from storage.objects)  = (select objects   from pg_temp.areatotals),
+  'admin sees everything, in both areas');
+select pg_temp.check(pg_temp.seen('f2f2f2f2-0000-0000-0000-000000000001') = '1,1,1,1,2,1,1'
+                     and pg_temp.seen('a1a1a1a1-0000-0000-0000-000000000001') = '1,1,1,1,2,1,1',
+                     'admin sees every part of both a finance job and an accounting job');
+
+-- ── Accounting-only staff ───────────────────────────────────
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000d1';
+select pg_temp.check(pg_temp.seen('a1a1a1a1-0000-0000-0000-000000000001') = '1,1,1,1,2,1,1',
+                     'accounting staff see every part of an accounting job');
+select pg_temp.check(pg_temp.seen('f2f2f2f2-0000-0000-0000-000000000001') = '0,0,0,0,0,0,0',
+                     'accounting staff see nothing of a finance job (job, requests, responses, files, messages, consents, storage), even with its ID');
+select pg_temp.check(pg_temp.changed($q$update public.jobs set title = 'Hacked' where id = 'f2f2f2f2-0000-0000-0000-000000000001'$q$) = 0
+                     and pg_temp.changed($q$update public.requests set title = 'Hacked' where job_id = 'f2f2f2f2-0000-0000-0000-000000000001'$q$) = 0
+                     and pg_temp.changed($q$update public.files set original_name = 'x' where job_id = 'f2f2f2f2-0000-0000-0000-000000000001'$q$) = 0
+                     and pg_temp.changed($q$delete from public.files where job_id = 'f2f2f2f2-0000-0000-0000-000000000001'$q$) = 0
+                     and pg_temp.changed($q$delete from public.messages where job_id = 'f2f2f2f2-0000-0000-0000-000000000001'$q$) = 0,
+                     'accounting staff cannot edit or delete anything on a finance job');
+select pg_temp.check(
+  pg_temp.denied($q$insert into public.requests (job_id, kind, title) values ('f2f2f2f2-0000-0000-0000-000000000001', 'upload', 'x')$q$)
+  and pg_temp.denied($q$insert into public.messages (job_id, body, internal) values ('f2f2f2f2-0000-0000-0000-000000000001', 'x', true)$q$)
+  and pg_temp.denied($q$insert into public.responses (request_id, answer) values ('f2f2f2f2-1111-0000-0000-000000000001', '{"value":"x"}')$q$)
+  and pg_temp.denied($q$insert into public.job_contacts (job_id, profile_id) values ('f2f2f2f2-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000d1')$q$)
+  and pg_temp.denied($q$insert into public.files (client_id, job_id, storage_path, original_name)
+        values ('a3a3a3a3-0000-0000-0000-000000000000', 'f2f2f2f2-0000-0000-0000-000000000001',
+                'a3a3a3a3-0000-0000-0000-000000000000/f2f2f2f2-0000-0000-0000-000000000001/x.pdf', 'x.pdf')$q$),
+  'accounting staff cannot add requests, messages, answers, contacts or files to a finance job');
+select pg_temp.check(
+  pg_temp.denied($q$select public.create_job_from_template('a3a3a3a3-0000-0000-0000-000000000000',
+        'dddddddd-0000-0000-0000-000000000001', 'Sneaky finance job', 'finance_application', null, null, null, '{}')$q$)
+  and pg_temp.denied($q$select public.create_job_from_template('a3a3a3a3-0000-0000-0000-000000000000',
+        'dddddddd-0000-0000-0000-000000000000', 'Accounting template, finance service', 'finance_application', null, null, null, '{}')$q$)
+  and pg_temp.denied($q$select public.add_pending_request('f2f2f2f2-0000-0000-0000-000000000001', 0, null)$q$),
+  'accounting staff cannot create a finance job (from a finance template, or by choosing a finance service) or add to one');
+select pg_temp.check((select public.create_job_from_template('a3a3a3a3-0000-0000-0000-000000000000',
+        'dddddddd-0000-0000-0000-000000000000', 'Allowed accounting job', 'bookkeeping', null, null, null, '{}')) is not null,
+                     'accounting staff can create an accounting job from an accounting template');
+select pg_temp.check((select area from public.jobs where title = 'Allowed accounting job') = 'accounting',
+                     'a job''s area follows its service');
+select pg_temp.check(
+  (select count(*) from public.clients where id = 'a3a3a3a3-0000-0000-0000-000000000000') = 1       -- has an accounting job
+  and (select count(*) from public.clients where id = 'f3f3f3f3-0000-0000-0000-000000000000') = 0    -- finance-only client
+  and (select count(*) from public.clients where id = 'a4a4a4a4-0000-0000-0000-000000000000') = 1,   -- no jobs yet
+  'accounting staff see a client if it has an accounting job or no jobs, but not a finance-only client');
+select pg_temp.check(
+  (select count(*) from public.profiles where id = '00000000-0000-0000-0000-0000000000e1') = 1
+  and (select count(*) from public.profiles where id = '00000000-0000-0000-0000-0000000000e2') = 0,
+  'accounting staff see contacts of clients they can access, not contacts of finance-only clients');
+select pg_temp.check(
+  pg_temp.denied($q$update public.profiles set staff_areas = array['accounting','finance'] where id = '00000000-0000-0000-0000-0000000000d1'$q$)
+  and pg_temp.denied($q$select public.set_staff_areas('00000000-0000-0000-0000-0000000000d1', array['accounting','finance'])$q$),
+  'staff cannot change their own areas (directly or through the function)');
+select pg_temp.check(pg_temp.denied($q$select public.set_staff_areas('00000000-0000-0000-0000-0000000000d3', array['accounting'])$q$),
+                     'staff cannot change anyone else''s areas either');
+
+-- ── Finance-only staff: the reverse ─────────────────────────
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000d2';
+select pg_temp.check(pg_temp.seen('f2f2f2f2-0000-0000-0000-000000000001') = '1,1,1,1,2,1,1',
+                     'finance staff see every part of a finance job');
+select pg_temp.check(pg_temp.seen('a1a1a1a1-0000-0000-0000-000000000001') = '0,0,0,0,0,0,0',
+                     'finance staff see nothing of an accounting job (job, requests, responses, files, messages, consents, storage), even with its ID');
+select pg_temp.check(pg_temp.changed($q$update public.jobs set title = 'Hacked' where id = 'a1a1a1a1-0000-0000-0000-000000000001'$q$) = 0
+                     and pg_temp.changed($q$update public.requests set title = 'Hacked' where job_id = 'a1a1a1a1-0000-0000-0000-000000000001'$q$) = 0
+                     and pg_temp.changed($q$delete from public.files where job_id = 'a1a1a1a1-0000-0000-0000-000000000001'$q$) = 0
+                     and pg_temp.changed($q$delete from public.messages where job_id = 'a1a1a1a1-0000-0000-0000-000000000001'$q$) = 0,
+                     'finance staff cannot edit or delete anything on an accounting job');
+select pg_temp.check(
+  pg_temp.denied($q$insert into public.requests (job_id, kind, title) values ('a1a1a1a1-0000-0000-0000-000000000001', 'upload', 'x')$q$)
+  and pg_temp.denied($q$select public.create_job_from_template('a3a3a3a3-0000-0000-0000-000000000000',
+        'dddddddd-0000-0000-0000-000000000000', 'Sneaky accounting job', 'bookkeeping', null, null, null, '{}')$q$),
+  'finance staff cannot add to an accounting job or create one');
+select pg_temp.check(
+  (select count(*) from public.clients where id = 'f3f3f3f3-0000-0000-0000-000000000000') = 1
+  and (select count(*) from public.clients where id = 'a3a3a3a3-0000-0000-0000-000000000000') = 1
+  and (select count(*) from public.clients where id = 'aaaaaaaa-0000-0000-0000-000000000000') = 0,  -- accounting-only (Alpha)
+  'finance staff see finance clients and mixed clients, but not an accounting-only client');
+
+-- ── Staff with no areas see nothing ─────────────────────────
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000d3';
+select pg_temp.check((select count(*) from public.jobs) = 0 and (select count(*) from public.requests) = 0
+                     and (select count(*) from public.responses) = 0 and (select count(*) from public.files) = 0
+                     and (select count(*) from public.messages) = 0 and (select count(*) from public.consents) = 0
+                     and (select count(*) from storage.objects) = 0 and (select count(*) from public.clients) = 0,
+                     'staff with no areas see no jobs, requests, answers, files, messages, consents or clients');
+select pg_temp.check(
+  pg_temp.denied($q$insert into public.clients (name, entity_type) values ('No-area client', 'other')$q$)
+  and pg_temp.denied($q$select public.create_job_from_template('a3a3a3a3-0000-0000-0000-000000000000',
+        'dddddddd-0000-0000-0000-000000000000', 'No-area job', 'bookkeeping', null, null, null, '{}')$q$),
+  'staff with no areas cannot create clients or jobs');
+
+-- ── Only the admin grants areas, and it is audited ──────────
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select public.set_staff_areas('00000000-0000-0000-0000-0000000000d3', array['accounting', 'accounting']);
+select pg_temp.check((select staff_areas from public.profiles where id = '00000000-0000-0000-0000-0000000000d3') = array['accounting'],
+                     'admin can grant an area');
+select pg_temp.check((select count(*) from public.audit_log
+                      where action = 'staff_areas_changed' and entity_id = '00000000-0000-0000-0000-0000000000d3'
+                        and actor_id = '00000000-0000-0000-0000-00000000000a'
+                        and meta -> 'areas' = '["accounting"]'::jsonb and meta -> 'previous' = '[]'::jsonb) = 1,
+                     'granting an area is audited');
+do $$ begin
+  perform public.set_staff_areas('00000000-0000-0000-0000-0000000000d3', array['sales']);
+  raise exception 'RLS TEST FAILED: an unknown area was accepted';
+exception when raise_exception then
+  if sqlerrm like 'RLS TEST FAILED%' then raise; end if;
+  raise notice 'ok  unknown areas are refused';
+end $$;
+do $$ begin
+  perform public.set_staff_areas('00000000-0000-0000-0000-0000000000e1', array['accounting']);
+  raise exception 'RLS TEST FAILED: areas were set on a client';
+exception when sqlstate 'P0002' then raise notice 'ok  areas can only be set on staff';
+end $$;
+-- The grant takes effect straight away.
+select public.set_staff_areas('00000000-0000-0000-0000-0000000000d3', array['finance']);
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000d3';
+select pg_temp.check(pg_temp.seen('f2f2f2f2-0000-0000-0000-000000000001') = '1,1,1,1,2,1,1'
+                     and pg_temp.seen('a1a1a1a1-0000-0000-0000-000000000001') = '0,0,0,0,0,0,0',
+                     'a newly granted area takes effect immediately, and only that area');
+
+-- ── Clients: both areas, or one ─────────────────────────────
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000e1';
+select pg_temp.check(pg_temp.seen('a1a1a1a1-0000-0000-0000-000000000001') = '1,1,1,1,1,1,1'
+                     and pg_temp.seen('f2f2f2f2-0000-0000-0000-000000000001') = '1,1,1,1,1,1,1'
+                     and (select count(distinct area) from public.jobs) = 2,
+                     'a client with jobs in both areas sees both (without internal notes)');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000e2';
+select pg_temp.check((select count(*) from public.jobs) = 1
+                     and (select count(*) from public.jobs where area = 'accounting') = 0
+                     and pg_temp.seen('a1a1a1a1-0000-0000-0000-000000000001') = '0,0,0,0,0,0,0'
+                     and pg_temp.seen('f2f2f2f2-0000-0000-0000-000000000001') = '0,0,0,0,0,0,0'
+                     and (select count(*) from public.clients) = 1,
+                     'a finance-only client sees no accounting data, nor another client''s finance job');
+
+reset role;
 reset role;
 \o
 \echo ALL RLS TESTS PASSED

@@ -5,7 +5,7 @@ import { useActionState, useState } from "react";
 import { createJob } from "../actions";
 import { inputClass, primaryButtonClass, secondaryButtonClass } from "@/components/ui/styles";
 import { formatDate } from "@/lib/labels";
-import { SERVICES, SERVICE_LABELS } from "@/lib/validation/request";
+import { SERVICE_LABELS } from "@/lib/validation/request";
 
 type Props = {
   clientId: string;
@@ -13,13 +13,14 @@ type Props = {
   templates: { id: string; name: string; service: string }[];
   contributors: { id: string; name: string }[];
   staff: { id: string; name: string }[];
+  services: readonly string[];
 };
 
 // "Year-end accounts 31/03/2026"
 const suggestTitle = (service: string, periodEnd: string) =>
   [SERVICE_LABELS[service] ?? "", periodEnd ? formatDate(periodEnd) : ""].filter(Boolean).join(" ");
 
-export function NewJobForm({ clientId, clientYearEnd, templates, contributors, staff }: Props) {
+export function NewJobForm({ clientId, clientYearEnd, templates, contributors, staff, services }: Props) {
   const [state, action, pending] = useActionState(createJob, {});
   const e = state.errors ?? {};
 
@@ -92,7 +93,7 @@ export function NewJobForm({ clientId, clientYearEnd, templates, contributors, s
           }}
           className={inputClass}
         >
-          {SERVICES.map((s) => (
+          {services.map((s) => (
             <option key={s} value={s}>{SERVICE_LABELS[s]}</option>
           ))}
         </select>

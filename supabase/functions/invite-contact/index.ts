@@ -81,7 +81,9 @@ Deno.serve(async (req) => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const { data: client } = await admin.from("clients").select("id").eq("id", input.client_id).maybeSingle();
+  // The client must be one this staff member can see (row-level security, as the caller): staff only
+  // work with the areas they have been given, so they cannot attach contacts to other clients by ID.
+  const { data: client } = await asCaller.from("clients").select("id").eq("id", input.client_id).maybeSingle();
   if (!client) return FAILED("client");
 
   const { data: existing } = await admin

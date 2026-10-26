@@ -4,6 +4,7 @@ import { z } from "zod";
 import { MessageThread, type ThreadMessage } from "@/components/message-thread";
 import { ReplyForm } from "@/components/reply-form";
 import { cardClass } from "@/components/ui/styles";
+import { AREA_LABELS, isArea } from "@/lib/areas";
 import { CLIENT_REQUEST_STATUS_LABELS, CLIENT_STAGE_LABELS, formatDate } from "@/lib/labels";
 import { createClient } from "@/lib/supabase/server";
 
@@ -17,7 +18,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   // Row-level security: a job that isn't yours isn't found, however the address is changed.
   const { data: job } = await supabase
     .from("jobs")
-    .select("id, title, stage, client:clients(name)")
+    .select("id, title, stage, area, client:clients(name)")
     .eq("id", id)
     .maybeSingle();
   if (!job) notFound();
@@ -48,7 +49,14 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   return (
     <div className="space-y-8">
       <div>
-        <p className="text-text-muted">{job.client?.name}</p>
+        <p className="text-text-muted">
+          {job.client?.name}
+          {isArea(job.area) ? (
+            <span className="ml-2 rounded-full border border-line px-2 py-0.5 text-sm" data-testid="area-label">
+              {AREA_LABELS[job.area]}
+            </span>
+          ) : null}
+        </p>
         <h1 className="text-2xl font-semibold sm:text-3xl">{job.title}</h1>
         <p className="mt-2 text-lg">
           <span className="text-text-muted">Where things stand: </span>

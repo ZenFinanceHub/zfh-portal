@@ -1,11 +1,18 @@
 import Link from "next/link";
 import { MessageThread, type ThreadMessage } from "@/components/message-thread";
+import { AreaTabs } from "@/components/area-tabs";
 import { ReplyForm } from "@/components/reply-form";
 import { cardClass } from "@/components/ui/styles";
+import { resolveArea } from "@/lib/areas";
+import { getClientAreas } from "@/lib/client/areas";
 import { createClient } from "@/lib/supabase/server";
 
-export default async function MessagesPage() {
+export default async function MessagesPage({ searchParams }: { searchParams: Promise<{ area?: string }> }) {
+  const { area: requestedArea } = await searchParams;
   const supabase = await createClient();
+  const areas = await getClientAreas(supabase);
+  const showTabs = areas.length > 1;
+  const area = resolveArea(requestedArea, areas);
   const { data: auth } = await supabase.auth.getUser();
   const me = auth.user!.id;
 
@@ -13,9 +20,9 @@ export default async function MessagesPage() {
   const { data: memberships } = await supabase.from("client_contacts").select("client_id").eq("profile_id", me);
   const clientIds = (memberships ?? []).map((m) => m.client_id);
 
-  const { data: jobs } = clientIds.length
-    ? await supabase.from("jobs").select("id, title, client:clients(name)").in("client_id", clientIds)
-    : { data: [] };
+  let jobsQuery = supabase.from("jobs").select("id, title, client:clients(name)").in("client_id", clientIds);
+  if (showTabs) jobsQuery = jobsQuery.eq("area", area);
+  const { data: jobs } = clientIds.length ? await jobsQuery : { data: [] };
   const jobIds = (jobs ?? []).map((j) => j.id);
 
   const { data: messages } = jobIds.length
@@ -38,7 +45,8 @@ export default async function MessagesPage() {
 
   return (
     <>
-      <h1 className="mb-6 text-2xl font-semibold sm:text-3xl">Messages</h1>
+      <h1 className="mb-4 text-2xl font-semibold sm:text-3xl">Messages</h1>
+      {showTabs ? <AreaTabs areas={areas} current={area} fromAddress={requestedArea !== undefined} /> : null}
       {threads.length === 0 ? (
         <div className={cardClass}>
           <p className="text-lg">No messages yet.</p>

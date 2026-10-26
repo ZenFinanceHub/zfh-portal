@@ -1,10 +1,14 @@
 import Link from "next/link";
+import { AreaTabs } from "@/components/area-tabs";
 import { cardClass, primaryButtonInlineClass } from "@/components/ui/styles";
 import { todayLondon } from "@/lib/dates";
 import { CLIENT_ACTION_LABELS, formatDate } from "@/lib/labels";
+import { resolveArea } from "@/lib/areas";
+import { getClientAreas } from "@/lib/client/areas";
 import { createClient } from "@/lib/supabase/server";
 
-export default async function ThingsToDoPage() {
+export default async function ThingsToDoPage({ searchParams }: { searchParams: Promise<{ area?: string }> }) {
+  const { area: requestedArea } = await searchParams;
   const supabase = await createClient();
   const { data: auth } = await supabase.auth.getUser();
   const userId = auth.user!.id;
@@ -18,16 +22,21 @@ export default async function ThingsToDoPage() {
   const nameByClient = new Map((memberships ?? []).map((m) => [m.client_id, m.client?.name ?? ""]));
   const clientIds = [...roleByClient.keys()];
 
-  const { data: rows, error } = clientIds.length
-    ? await supabase
+  // Tabs only when the person has jobs in both areas.
+  const areas = await getClientAreas(supabase);
+  const showTabs = areas.length > 1;
+  const area = resolveArea(requestedArea, areas);
+
+  let query = supabase
         .from("requests")
         .select("id, title, help_text, kind, due_date, status, return_reason, created_at, job:jobs!inner(id, client_id, stage)")
         .in("status", ["open", "returned"])
         .in("job.client_id", clientIds)
         .not("job.stage", "in", "(completed,cancelled)")
         .order("due_date", { ascending: true, nullsFirst: false })
-        .order("created_at")
-    : { data: [], error: null };
+        .order("created_at");
+  if (showTabs) query = query.eq("job.area", area);
+  const { data: rows, error } = clientIds.length ? await query : { data: [], error: null };
 
   // Only account owners can approve or consent, so those never appear as something to do for a contributor.
   const items = (rows ?? []).filter(
@@ -53,7 +62,8 @@ export default async function ThingsToDoPage() {
 
   return (
     <>
-      <h1 className="mb-6 text-2xl font-semibold sm:text-3xl">Things to do</h1>
+      <h1 className="mb-4 text-2xl font-semibold sm:text-3xl">Things to do</h1>
+      {showTabs ? <AreaTabs areas={areas} current={area} fromAddress={requestedArea !== undefined} /> : null}
 
       {items.length === 0 ? (
         <div className={cardClass}>

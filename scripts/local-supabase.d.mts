@@ -4,7 +4,7 @@ export function getLocal(): { apiUrl: string; anonKey: string; serviceKey: strin
 export function adminClient(local?: ReturnType<typeof getLocal>): SupabaseClient;
 export function ensureUser(
   admin: SupabaseClient,
-  user: { email: string; staff?: boolean },
+  user: { email: string; staff?: boolean; areas?: string[] },
 ): Promise<string>;
 export function ensureClientOwner(
   admin: SupabaseClient,

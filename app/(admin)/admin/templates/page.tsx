@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { cardClass } from "@/components/ui/styles";
+import { AREA_LABELS, isArea } from "@/lib/areas";
 import { createClient } from "@/lib/supabase/server";
 import { SERVICE_LABELS } from "@/lib/validation/request";
 
@@ -7,7 +8,7 @@ export default async function TemplatesPage() {
   const supabase = await createClient();
   const { data: templates, error } = await supabase
     .from("templates")
-    .select("id, name, service, description, active, requests")
+    .select("id, name, service, area, description, active, requests")
     .order("name");
 
   return (
@@ -29,7 +30,7 @@ export default async function TemplatesPage() {
                   {t.active ? "" : " (inactive)"}
                 </span>
                 <span className="block text-sm text-text-muted">
-                  {SERVICE_LABELS[t.service]} · {Array.isArray(t.requests) ? t.requests.length : 0} requests
+                  {isArea(t.area) ? `${AREA_LABELS[t.area]} · ` : ""}{SERVICE_LABELS[t.service]} · {Array.isArray(t.requests) ? t.requests.length : 0} requests
                   {t.description ? ` · ${t.description}` : ""}
                 </span>
               </Link>

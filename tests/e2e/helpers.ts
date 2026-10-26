@@ -25,11 +25,14 @@ export async function signInAs(page: Page, email: string, type: "magiclink" | "i
   await page.goto(`/auth/callback?token_hash=${token}&type=${type}`);
 }
 
-/** Creates a brand-new staff user, enrols an authenticator through the UI and lands on /admin. */
-export async function signInAsStaffWithMfa(page: Page, email: string) {
+/**
+ * Creates a brand-new staff user, enrols an authenticator through the UI and lands on /admin.
+ * Admin by default; pass `areas` for an ordinary staff member limited to those areas.
+ */
+export async function signInAsStaffWithMfa(page: Page, email: string, areas?: string[]) {
   const { data: old } = await admin.from("profiles").select("id").eq("email", email).maybeSingle();
   if (old) await admin.auth.admin.deleteUser(old.id);
-  await ensureUser(admin, { email, staff: true });
+  await ensureUser(admin, { email, staff: true, areas });
 
   await signInAs(page, email);
   await expect(page).toHaveURL(/\/auth\/mfa\/enrol$/);
@@ -38,4 +41,14 @@ export async function signInAsStaffWithMfa(page: Page, email: string) {
   await page.getByLabel("6-digit code").fill(totp(secret));
   await page.getByRole("button", { name: /confirm/i }).click();
   await expect(page).toHaveURL(/\/admin$/);
+}
+
+/** The signed-in user's access token, read from the Supabase session cookies in the browser context. */
+export async function accessTokenOf(page: Page): Promise<string> {
+  const cookies = (await page.context().cookies())
+    .filter((c) => /^sb-.*-auth-token(.d+)?$/.test(c.name))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const joined = cookies.map((c) => c.value).join("").replace(/^base64-/, "");
+  const session = JSON.parse(Buffer.from(joined, "base64url").toString("utf8"));
+  return session.access_token as string;
 }

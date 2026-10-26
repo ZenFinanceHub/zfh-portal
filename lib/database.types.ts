@@ -187,14 +187,14 @@ isOneToOne: false
                   ]
                 },"jobs": {
                   Row: {
-                    "assigned_to": string | null,"client_id": string,"created_at": string,"created_by": string | null,"due_date": string | null,"finance_stage": string | null,"id": string,"pending_blueprints": NonNullable<Json>,"period_end": string | null,"service": string,"stage": string,"template_id": string | null,"title": string,"updated_at": string
+                    "area": string,"assigned_to": string | null,"client_id": string,"created_at": string,"created_by": string | null,"due_date": string | null,"finance_stage": string | null,"id": string,"pending_blueprints": NonNullable<Json>,"period_end": string | null,"service": string,"stage": string,"template_id": string | null,"title": string,"updated_at": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "assigned_to"?: string | null,"client_id": string,"created_at"?: string,"created_by"?: string | null,"due_date"?: string | null,"finance_stage"?: string | null,"id"?: string,"pending_blueprints"?: NonNullable<Json>,"period_end"?: string | null,"service": string,"stage"?: string,"template_id"?: string | null,"title": string,"updated_at"?: string
+                    "area"?: never,"assigned_to"?: string | null,"client_id": string,"created_at"?: string,"created_by"?: string | null,"due_date"?: string | null,"finance_stage"?: string | null,"id"?: string,"pending_blueprints"?: NonNullable<Json>,"period_end"?: string | null,"service": string,"stage"?: string,"template_id"?: string | null,"title": string,"updated_at"?: string
                   }
                   Update: {
-                    "assigned_to"?: string | null,"client_id"?: string,"created_at"?: string,"created_by"?: string | null,"due_date"?: string | null,"finance_stage"?: string | null,"id"?: string,"pending_blueprints"?: NonNullable<Json>,"period_end"?: string | null,"service"?: string,"stage"?: string,"template_id"?: string | null,"title"?: string,"updated_at"?: string
+                    "area"?: never,"assigned_to"?: string | null,"client_id"?: string,"created_at"?: string,"created_by"?: string | null,"due_date"?: string | null,"finance_stage"?: string | null,"id"?: string,"pending_blueprints"?: NonNullable<Json>,"period_end"?: string | null,"service"?: string,"stage"?: string,"template_id"?: string | null,"title"?: string,"updated_at"?: string
                   }
                   Relationships: [
                     {
@@ -251,14 +251,14 @@ isOneToOne: false
                   ]
                 },"profiles": {
                   Row: {
-                    "created_at": string,"email": string,"full_name": string | null,"id": string,"is_staff": boolean,"phone": string | null,"staff_role": string | null
+                    "created_at": string,"email": string,"full_name": string | null,"id": string,"is_staff": boolean,"phone": string | null,"staff_areas": (string)[],"staff_role": string | null
                   }
                   ComputedFields: never
                   Insert: {
-                    "created_at"?: string,"email": string,"full_name"?: string | null,"id": string,"is_staff"?: boolean,"phone"?: string | null,"staff_role"?: string | null
+                    "created_at"?: string,"email": string,"full_name"?: string | null,"id": string,"is_staff"?: boolean,"phone"?: string | null,"staff_areas"?: (string)[],"staff_role"?: string | null
                   }
                   Update: {
-                    "created_at"?: string,"email"?: string,"full_name"?: string | null,"id"?: string,"is_staff"?: boolean,"phone"?: string | null,"staff_role"?: string | null
+                    "created_at"?: string,"email"?: string,"full_name"?: string | null,"id"?: string,"is_staff"?: boolean,"phone"?: string | null,"staff_areas"?: (string)[],"staff_role"?: string | null
                   }
                   Relationships: [
                     
@@ -323,14 +323,14 @@ isOneToOne: false
                   ]
                 },"templates": {
                   Row: {
-                    "active": boolean,"created_at": string,"description": string | null,"id": string,"name": string,"requests": NonNullable<Json>,"service": string
+                    "active": boolean,"area": string,"created_at": string,"description": string | null,"id": string,"name": string,"requests": NonNullable<Json>,"service": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "active"?: boolean,"created_at"?: string,"description"?: string | null,"id"?: string,"name": string,"requests"?: NonNullable<Json>,"service": string
+                    "active"?: boolean,"area"?: never,"created_at"?: string,"description"?: string | null,"id"?: string,"name": string,"requests"?: NonNullable<Json>,"service": string
                   }
                   Update: {
-                    "active"?: boolean,"created_at"?: string,"description"?: string | null,"id"?: string,"name"?: string,"requests"?: NonNullable<Json>,"service"?: string
+                    "active"?: boolean,"area"?: never,"created_at"?: string,"description"?: string | null,"id"?: string,"name"?: string,"requests"?: NonNullable<Json>,"service"?: string
                   }
                   Relationships: [
                     
@@ -343,6 +343,9 @@ isOneToOne: false
           Functions: {
             "add_pending_request":
 { Args: { "p_due_date"?: string,"p_index": number,"p_job_id": string }; Returns: string
+                           },
+"area_of_service":
+{ Args: { "p_service": string }; Returns: string
                            },
 "can_access_client":
 { Args: { "p_client_id": string }; Returns: boolean
@@ -379,6 +382,24 @@ isOneToOne: false
                            },
 "request_user_agent":
 { Args: Record<PropertyKey, never>; Returns: string
+                           },
+"set_staff_areas":
+{ Args: { "p_areas": (string)[],"p_profile_id": string }; Returns: undefined
+                           },
+"staff_can_access_area":
+{ Args: { "p_area": string }; Returns: boolean
+                           },
+"staff_can_access_client":
+{ Args: { "p_client_id": string }; Returns: boolean
+                           },
+"staff_can_access_job":
+{ Args: { "p_job_id": string }; Returns: boolean
+                           },
+"staff_can_access_optional_job":
+{ Args: { "p_job_id": string }; Returns: boolean
+                           },
+"staff_has_any_area":
+{ Args: Record<PropertyKey, never>; Returns: boolean
                            },
 "submit_request":
 { Args: { "p_request_id": string }; Returns: undefined

@@ -25,8 +25,11 @@ export function adminClient(local = getLocal()) {
   });
 }
 
-/** Creates (or finds) a user and sets their profile role. Returns the user id. */
-export async function ensureUser(admin, { email, staff = false }) {
+/**
+ * Creates (or finds) a user and sets their profile role. Returns the user id.
+ * Staff are admins unless `areas` is given, in which case they are ordinary staff limited to those areas.
+ */
+export async function ensureUser(admin, { email, staff = false, areas }) {
   let id;
   const created = await admin.auth.admin.createUser({ email, email_confirm: true });
   if (created.error) {
@@ -38,7 +41,11 @@ export async function ensureUser(admin, { email, staff = false }) {
   }
   const { error } = await admin
     .from("profiles")
-    .update({ is_staff: staff, staff_role: staff ? "admin" : null })
+    .update({
+      is_staff: staff,
+      staff_role: staff ? (areas ? "staff" : "admin") : null,
+      staff_areas: staff && areas ? areas : [],
+    })
     .eq("id", id);
   if (error) throw new Error(`Could not set role for ${email}: ${error.message}`);
   return id;

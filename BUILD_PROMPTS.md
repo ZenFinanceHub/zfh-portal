@@ -134,14 +134,30 @@ Test at 375px. No session timeouts for clients.
 ## Prompt 7 — Notifications
 
 ```
-- Edge function send-notifications (Resend, API key from Edge Function secret RESEND_API_KEY, Reply-To craig@zen-finance.co.uk), modes:
+Rules are recorded in CLAUDE.md → Notifications. Build them exactly:
+- Edge function send-notifications (Resend, API key from Edge Function secret RESEND_API_KEY,
+  From ZenFinanceHub <portal@mail.zenfinancehub.com>, Reply-To craig@zen-finance.co.uk), modes:
   1. new_request: email each contact who can see the job: subject "You have something to do",
      body = one line + button to portal. No titles, amounts or names of documents.
   2. reminders: daily, open requests due in 7, 3 or 1 days → one email per contact listing only the count
-  3. staff_alert: on client submit/consent → email craig@zen-finance.co.uk with client name and link to
-     the job (internal email, still no file contents); setting for instant vs 17:00 daily digest
-- pg_cron: reminders 08:00 Europe/London daily, digest 17:00
-- Track sends in a notifications_log table (new migration + RLS + tests) to avoid duplicate emails
+  3. staff_alert (batched): client uploads/answers/messages are grouped per client; send ONE email per client
+     15 minutes after that client's last activity ("Alpha Ltd sent 3 items and 1 message on the Year-end job").
+     Never one email per file.
+  4. staff_urgent: sent immediately, even in quiet hours, for approvals, lender_share consents, and any upload
+     or submit on a finance_application job.
+  5. staff_digest: 17:00 on working days to craig@zen-finance.co.uk, grouped by area (Accounting, Business
+     Finance) then client; skip if nothing happened.
+- Quiet hours: 18:00–08:00 Europe/London, Saturdays, Sundays and UK bank holidays (editable bank_holidays table).
+  Non-urgent staff alerts raised in quiet hours are held and sent as one email at 08:00 on the next working day.
+- Routing: the job's assigned staff member; if none, craig@zen-finance.co.uk. Staff only get alerts for areas
+  they can access (profiles.staff_areas, see Areas in CLAUDE.md); jobs.area is available on every job.
+- Content of every staff email: client name, job title, kind and count of items, and a link.
+  NEVER file names, answers, amounts or message text.
+- Tables (new migration + RLS + tests): notification_settings (editable at /admin/settings: batch delay minutes,
+  quiet-hour window, urgent rules on/off, digest on/off and time, fallback address) and notifications_log
+  (every send recorded, unique key to prevent duplicates), plus bank_holidays.
+- pg_cron: reminders 08:00 Europe/London daily; batch sweep every 5 minutes; held-alert release 08:00 on working days;
+  digest 17:00 on working days
 - Unsubscribe-from-reminders toggle on /account (stored on profiles; new migration)
 ```
 

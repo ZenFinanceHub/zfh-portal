@@ -9,6 +9,7 @@ import {
   STAGE_LABELS,
   formatDate,
 } from "@/lib/labels";
+import { AREA_LABELS, isArea } from "@/lib/areas";
 import { createClient } from "@/lib/supabase/server";
 import { InviteContact } from "./invite-contact";
 
@@ -41,7 +42,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
       .order("created_at"),
     supabase
       .from("jobs")
-      .select("id, title, stage, due_date")
+      .select("id, title, stage, area, due_date")
       .eq("client_id", id)
       .order("created_at", { ascending: false }),
   ]);
@@ -113,7 +114,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                 <Link href={`/admin/jobs/${j.id}`} className={`${cardClass} block min-h-11 !p-4 hover:border-gold`}>
                   <span className="block text-base font-medium">{j.title}</span>
                   <span className="block text-sm text-text-muted">
-                    {STAGE_LABELS[j.stage]} · Due {formatDate(j.due_date)}
+                    {isArea(j.area) ? `${AREA_LABELS[j.area]} · ` : ""}{STAGE_LABELS[j.stage]} · Due {formatDate(j.due_date)}
                   </span>
                 </Link>
               </li>
