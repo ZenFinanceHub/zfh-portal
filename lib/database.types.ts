@@ -187,14 +187,14 @@ isOneToOne: false
                   ]
                 },"jobs": {
                   Row: {
-                    "assigned_to": string | null,"client_id": string,"created_at": string,"created_by": string | null,"due_date": string | null,"finance_stage": string | null,"id": string,"period_end": string | null,"service": string,"stage": string,"template_id": string | null,"title": string,"updated_at": string
+                    "assigned_to": string | null,"client_id": string,"created_at": string,"created_by": string | null,"due_date": string | null,"finance_stage": string | null,"id": string,"pending_blueprints": NonNullable<Json>,"period_end": string | null,"service": string,"stage": string,"template_id": string | null,"title": string,"updated_at": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "assigned_to"?: string | null,"client_id": string,"created_at"?: string,"created_by"?: string | null,"due_date"?: string | null,"finance_stage"?: string | null,"id"?: string,"period_end"?: string | null,"service": string,"stage"?: string,"template_id"?: string | null,"title": string,"updated_at"?: string
+                    "assigned_to"?: string | null,"client_id": string,"created_at"?: string,"created_by"?: string | null,"due_date"?: string | null,"finance_stage"?: string | null,"id"?: string,"pending_blueprints"?: NonNullable<Json>,"period_end"?: string | null,"service": string,"stage"?: string,"template_id"?: string | null,"title": string,"updated_at"?: string
                   }
                   Update: {
-                    "assigned_to"?: string | null,"client_id"?: string,"created_at"?: string,"created_by"?: string | null,"due_date"?: string | null,"finance_stage"?: string | null,"id"?: string,"period_end"?: string | null,"service"?: string,"stage"?: string,"template_id"?: string | null,"title"?: string,"updated_at"?: string
+                    "assigned_to"?: string | null,"client_id"?: string,"created_at"?: string,"created_by"?: string | null,"due_date"?: string | null,"finance_stage"?: string | null,"id"?: string,"pending_blueprints"?: NonNullable<Json>,"period_end"?: string | null,"service"?: string,"stage"?: string,"template_id"?: string | null,"title"?: string,"updated_at"?: string
                   }
                   Relationships: [
                     {
@@ -341,11 +341,20 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
-            "can_access_client":
+            "add_pending_request":
+{ Args: { "p_due_date"?: string,"p_index": number,"p_job_id": string }; Returns: string
+                           },
+"can_access_client":
 { Args: { "p_client_id": string }; Returns: boolean
                            },
 "can_access_job":
 { Args: { "p_job_id": string }; Returns: boolean
+                           },
+"create_job_from_template":
+{ Args: { "p_assigned_to": string,"p_client_id": string,"p_contributors"?: (string)[],"p_due_date": string,"p_period_end": string,"p_service": string,"p_template_id": string,"p_title": string }; Returns: string
+                           },
+"insert_request_from_blueprint":
+{ Args: { "b": Json,"p_due_date": string,"p_job_id": string,"p_sort": number }; Returns: string
                            },
 "is_admin":
 { Args: Record<PropertyKey, never>; Returns: boolean

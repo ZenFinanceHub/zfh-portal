@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
-import { cardClass, secondaryButtonClass } from "@/components/ui/styles";
+import { cardClass, primaryButtonInlineClass, secondaryButtonClass } from "@/components/ui/styles";
 import {
   CLIENT_STATUS_LABELS,
   ENTITY_TYPE_LABELS,
@@ -98,17 +98,24 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
       </section>
 
       <section aria-labelledby="jobs">
-        <h2 id="jobs" className="mb-3 text-xl font-semibold">
-          Jobs
-        </h2>
+        <div className="mb-3 flex items-center justify-between gap-4">
+          <h2 id="jobs" className="text-xl font-semibold">
+            Jobs
+          </h2>
+          <Link href={`/admin/clients/${id}/jobs/new`} className={primaryButtonInlineClass}>
+            New job
+          </Link>
+        </div>
         {jobs && jobs.length > 0 ? (
           <ul className="space-y-3">
             {jobs.map((j) => (
-              <li key={j.id} className={`${cardClass} !p-4`}>
-                <span className="block text-base font-medium">{j.title}</span>
-                <span className="block text-sm text-text-muted">
-                  {STAGE_LABELS[j.stage]} · Due {formatDate(j.due_date)}
-                </span>
+              <li key={j.id}>
+                <Link href={`/admin/jobs/${j.id}`} className={`${cardClass} block min-h-11 !p-4 hover:border-gold`}>
+                  <span className="block text-base font-medium">{j.title}</span>
+                  <span className="block text-sm text-text-muted">
+                    {STAGE_LABELS[j.stage]} · Due {formatDate(j.due_date)}
+                  </span>
+                </Link>
               </li>
             ))}
           </ul>

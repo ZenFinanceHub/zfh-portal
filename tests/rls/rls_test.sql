@@ -45,6 +45,12 @@ insert into storage.objects (bucket_id, name) values
 insert into public.messages (job_id, author_id, body, internal) values
   ('aaaaaaaa-1111-0000-0000-000000000000', '00000000-0000-0000-0000-00000000000a', 'Staff note', true);
 
+-- Totals of everything that exists (fixtures + any real data), captured as superuser,
+-- so staff checks can assert "sees every row" without assuming an empty database.
+create temp table pg_temp.totals as
+  select (select count(*) from public.clients) as clients;
+grant select on pg_temp.totals to authenticated;
+
 -- helper: assert
 create or replace function pg_temp.check(ok boolean, what text) returns void language plpgsql as $$
 begin
@@ -64,7 +70,11 @@ select pg_temp.check((select count(*) from public.files) = 0,                   
 select pg_temp.check((select count(*) from storage.objects) = 0,                      'owner A cannot see Beta storage objects');
 select pg_temp.check((select count(*) from public.messages) = 0,                      'owner A cannot see internal staff notes');
 select pg_temp.check((select count(*) from public.audit_log) = 0,                     'owner A cannot read audit log');
-select pg_temp.check((select count(*) from public.profiles) = 2,                      'owner A sees own profile + staff profile only');
+select pg_temp.check((select count(*) from public.profiles where id in
+                        ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-00000000000a')) = 2
+                      and (select count(*) from public.profiles
+                           where not is_staff and id <> '00000000-0000-0000-0000-0000000000a1') = 0,
+                     'owner A sees own profile + staff profile only');
 
 -- cannot write to another client's job
 do $$ begin
@@ -156,8 +166,13 @@ end $$;
 reset role;
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
-select pg_temp.check((select count(*) from public.clients) = 2,   'admin sees all clients');
-select pg_temp.check((select count(*) from public.messages) = 1,  'admin sees internal notes');
+select pg_temp.check((select count(*) from public.clients
+                      where id in ('aaaaaaaa-0000-0000-0000-000000000000', 'bbbbbbbb-0000-0000-0000-000000000000')) = 2
+                     and (select count(*) from public.clients) = (select clients from pg_temp.totals),
+                     'admin sees all clients');
+select pg_temp.check((select count(*) from public.messages
+                      where job_id = 'aaaaaaaa-1111-0000-0000-000000000000' and internal) = 1,
+                     'admin sees internal notes');
 select pg_temp.check((select count(*) from public.audit_log) > 0, 'audit log recorded client actions');
 select pg_temp.check((select count(*) from public.audit_log where meta::text like '%12500%') = 0,
                      'audit log holds no answer content');
@@ -244,6 +259,181 @@ select pg_temp.check((select count(*) from public.client_contacts where client_i
 -- A newly added owner sees only their own client.
 set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000c1';
 select pg_temp.check((select count(*) from public.clients) = 1, 'newly added contact sees only their client');
+
+-- ── Jobs from templates (migration 0002) ────────────────────
+reset role;
+insert into public.templates (id, name, service, requests) values
+  ('dddddddd-0000-0000-0000-000000000000', 'RLS fixture template', 'year_end', '[
+    {"kind":"upload","title":"Bank statements","due_offset_days":21},
+    {"kind":"question","title":"Stock value","question_type":"amount","help_text":"Year-end stock","due_offset_days":7},
+    {"kind":"approval","title":"Approve accounts"}
+  ]'::jsonb);
+
+-- Clients (owner, contributor) and anonymous users cannot create jobs or requests, by RPC or directly.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+do $$ begin
+  perform public.create_job_from_template('aaaaaaaa-0000-0000-0000-000000000000', 'dddddddd-0000-0000-0000-000000000000',
+    'Client-made job', 'year_end', null, null, null, '{}');
+  raise exception 'RLS TEST FAILED: client owner created a job from a template';
+exception when insufficient_privilege then raise notice 'ok  client owner cannot create a job from a template';
+end $$;
+do $$ begin
+  insert into public.jobs (client_id, title, service)
+  values ('aaaaaaaa-0000-0000-0000-000000000000', 'Direct job', 'other');
+  raise exception 'RLS TEST FAILED: client owner inserted a job directly';
+exception when insufficient_privilege then raise notice 'ok  client owner cannot insert a job directly';
+end $$;
+do $$ begin
+  insert into public.requests (job_id, kind, title)
+  values ('aaaaaaaa-1111-0000-0000-000000000000', 'upload', 'Direct request');
+  raise exception 'RLS TEST FAILED: client owner inserted a request directly';
+exception when insufficient_privilege then raise notice 'ok  client owner cannot insert a request directly';
+end $$;
+do $$ begin
+  perform public.add_pending_request('aaaaaaaa-1111-0000-0000-000000000000', 0, null);
+  raise exception 'RLS TEST FAILED: client owner added a pending request';
+exception when insufficient_privilege then raise notice 'ok  client owner cannot add a pending request';
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+do $$ begin
+  perform public.create_job_from_template('aaaaaaaa-0000-0000-0000-000000000000', 'dddddddd-0000-0000-0000-000000000000',
+    'Contributor-made job', 'year_end', null, null, null, '{}');
+  raise exception 'RLS TEST FAILED: contributor created a job from a template';
+exception when insufficient_privilege then raise notice 'ok  contributor cannot create a job from a template';
+end $$;
+reset role;
+set role anon;
+do $$ begin
+  perform public.create_job_from_template('aaaaaaaa-0000-0000-0000-000000000000', 'dddddddd-0000-0000-0000-000000000000',
+    'Anon job', 'year_end', null, null, null, '{}');
+  raise exception 'RLS TEST FAILED: anon created a job from a template';
+exception when insufficient_privilege then raise notice 'ok  anonymous users cannot create a job from a template';
+end $$;
+
+-- Staff create a job from a template.
+reset role;
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+do $$ declare j uuid; begin
+  j := public.create_job_from_template('aaaaaaaa-0000-0000-0000-000000000000', 'dddddddd-0000-0000-0000-000000000000',
+    'RLS fixture job', 'year_end', null, null, '00000000-0000-0000-0000-00000000000a',
+    array['00000000-0000-0000-0000-0000000000a2']::uuid[]);
+  if j is null then raise exception 'RLS TEST FAILED: no job id returned'; end if;
+  raise notice 'ok  staff can create a job from a template';
+end $$;
+
+select pg_temp.check((select count(*) from public.requests r join public.jobs j on j.id = r.job_id
+                      where j.title = 'RLS fixture job') = 2,
+                     'only blueprints with a due offset become requests');
+select pg_temp.check((select count(*) from public.requests r join public.jobs j on j.id = r.job_id
+                      where j.title = 'RLS fixture job' and r.kind = 'upload'
+                        and r.due_date = (now() at time zone 'Europe/London')::date + 21) = 1
+                     and (select count(*) from public.requests r join public.jobs j on j.id = r.job_id
+                          where j.title = 'RLS fixture job' and r.kind = 'question' and r.help_text = 'Year-end stock'
+                            and r.question_type = 'amount'
+                            and r.due_date = (now() at time zone 'Europe/London')::date + 7) = 1,
+                     'request due dates are today plus the blueprint offset');
+select pg_temp.check((select jsonb_array_length(pending_blueprints) from public.jobs where title = 'RLS fixture job') = 1
+                     and (select pending_blueprints -> 0 ->> 'kind' from public.jobs where title = 'RLS fixture job') = 'approval',
+                     'blueprints without a due offset are kept as "add later"');
+select pg_temp.check((select count(*) from public.job_contacts jc join public.jobs j on j.id = jc.job_id
+                      where j.title = 'RLS fixture job'
+                        and jc.profile_id = '00000000-0000-0000-0000-0000000000a2') = 1,
+                     'chosen contributors are added to the job');
+do $$ begin
+  perform public.create_job_from_template('aaaaaaaa-0000-0000-0000-000000000000', 'dddddddd-0000-0000-0000-000000000000',
+    'Bad contributor job', 'year_end', null, null, null, array['00000000-0000-0000-0000-0000000000b1']::uuid[]);
+  raise exception 'RLS TEST FAILED: a non-contact was added as contributor';
+exception when raise_exception then
+  if sqlerrm like 'RLS TEST FAILED%' then raise; end if;
+  raise notice 'ok  contributors must be contacts of the client';
+end $$;
+do $$ begin
+  perform public.create_job_from_template('aaaaaaaa-0000-0000-0000-000000000000', 'dddddddd-0000-0000-0000-000000000000',
+    'Bad assignee job', 'year_end', null, null, '00000000-0000-0000-0000-0000000000a1', '{}');
+  raise exception 'RLS TEST FAILED: a client was assigned to a job';
+exception when raise_exception then
+  if sqlerrm like 'RLS TEST FAILED%' then raise; end if;
+  raise notice 'ok  jobs can only be assigned to staff';
+end $$;
+select pg_temp.check((select count(*) from public.jobs where title in ('Bad contributor job', 'Bad assignee job')) = 0,
+                     'a rejected job leaves nothing behind');
+
+-- One-click add of a pending request.
+select public.add_pending_request((select id from public.jobs where title = 'RLS fixture job'), 0, null);
+select pg_temp.check((select count(*) from public.requests r join public.jobs j on j.id = r.job_id
+                      where j.title = 'RLS fixture job' and r.kind = 'approval') = 1
+                     and (select jsonb_array_length(pending_blueprints) from public.jobs where title = 'RLS fixture job') = 0,
+                     'staff can add a pending request with one call');
+do $$ begin
+  perform public.add_pending_request((select id from public.jobs where title = 'RLS fixture job'), 0, null);
+  raise exception 'RLS TEST FAILED: pending request added twice';
+exception when sqlstate 'P0002' then raise notice 'ok  a pending request can only be added once';
+end $$;
+
+-- Return and accept: a returned request is open to the client again.
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+select pg_temp.check((select count(*) from public.jobs where title = 'RLS fixture job') = 1
+                     and (select count(*) from public.requests r join public.jobs j on j.id = r.job_id
+                          where j.title = 'RLS fixture job') = 3,
+                     'client owner sees the new job and its requests');
+do $$ declare r uuid; begin
+  select q.id into r from public.requests q join public.jobs j on j.id = q.job_id
+   where j.title = 'RLS fixture job' and q.kind = 'approval';
+  perform public.submit_request(r);
+  raise notice 'ok  client owner can approve a request';
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+update public.requests set status = 'returned', return_reason = 'Please check the totals'
+ where status = 'submitted' and kind = 'approval'
+   and job_id = (select id from public.jobs where title = 'RLS fixture job');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+select pg_temp.check((select count(*) from public.requests q join public.jobs j on j.id = q.job_id
+                      where j.title = 'RLS fixture job' and q.status = 'returned'
+                        and q.return_reason = 'Please check the totals') = 1,
+                     'client sees why a request was returned');
+do $$ declare r uuid; begin
+  select q.id into r from public.requests q join public.jobs j on j.id = q.job_id
+   where j.title = 'RLS fixture job' and q.kind = 'approval';
+  perform public.submit_request(r);
+  raise notice 'ok  a returned request can be submitted again';
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+update public.requests set status = 'accepted'
+ where status = 'submitted' and kind = 'approval'
+   and job_id = (select id from public.jobs where title = 'RLS fixture job');
+select pg_temp.check((select count(*) from public.requests q join public.jobs j on j.id = q.job_id
+                      where j.title = 'RLS fixture job' and q.status = 'accepted') = 1,
+                     'staff can accept a submitted request');
+
+-- Staff state changes are audited, with the staff member as actor.
+select pg_temp.check(
+  (select count(*) from public.audit_log a join public.jobs j on j.id = a.entity_id
+   where j.title = 'RLS fixture job' and a.entity = 'jobs' and a.action = 'insert'
+     and a.actor_id = '00000000-0000-0000-0000-00000000000a') = 1
+  and (select count(*) from public.audit_log a join public.requests q on q.id = a.entity_id
+       join public.jobs j on j.id = q.job_id
+       where j.title = 'RLS fixture job' and a.entity = 'requests' and a.action = 'insert'
+         and a.actor_id = '00000000-0000-0000-0000-00000000000a') = 3
+  and (select count(*) from public.audit_log a join public.requests q on q.id = a.entity_id
+       join public.jobs j on j.id = q.job_id
+       where j.title = 'RLS fixture job' and a.action = 'update'
+         and a.meta ->> 'status' = 'returned'
+         and a.actor_id = '00000000-0000-0000-0000-00000000000a') = 1
+  and (select count(*) from public.audit_log a join public.requests q on q.id = a.entity_id
+       join public.jobs j on j.id = q.job_id
+       where j.title = 'RLS fixture job' and a.action = 'update'
+         and a.meta ->> 'status' = 'accepted'
+         and a.actor_id = '00000000-0000-0000-0000-00000000000a') = 1,
+  'job creation, returning and accepting are audited with the staff actor');
+
+-- A stage change by staff is audited too.
+update public.jobs set stage = 'in_progress' where title = 'RLS fixture job';
+select pg_temp.check((select count(*) from public.audit_log a join public.jobs j on j.id = a.entity_id
+                      where j.title = 'RLS fixture job' and a.entity = 'jobs' and a.action = 'update'
+                        and a.meta ->> 'stage' = 'in_progress') = 1,
+                     'job stage changes are audited');
 
 reset role;
 \o

@@ -4,6 +4,7 @@ import { SiteHeader } from "@/components/site-header";
 const NAV = [
   { href: "/admin", label: "Dashboard" },
   { href: "/admin/clients", label: "Clients" },
+  { href: "/admin/templates", label: "Templates" },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
