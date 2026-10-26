@@ -2,8 +2,8 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/lib/database.types";
 
-// Refreshes the Supabase session cookie on every request. Route protection
-// (client vs /admin + aal2) is added in the auth prompt.
+// Refreshes the Supabase session cookie on every request and returns the
+// verified claims (null when signed out) so proxy.ts can protect routes.
 export async function updateSession(request: NextRequest, requestHeaders: Headers) {
   let response = NextResponse.next({ request: { headers: requestHeaders } });
 
@@ -27,7 +27,7 @@ export async function updateSession(request: NextRequest, requestHeaders: Header
   );
 
   // Do not run code between createServerClient and getClaims.
-  await supabase.auth.getClaims();
+  const { data } = await supabase.auth.getClaims();
 
-  return response;
+  return { response, supabase, claims: data?.claims ?? null };
 }

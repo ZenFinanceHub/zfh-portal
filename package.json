@@ -10,7 +10,10 @@
     "typecheck": "tsc --noEmit",
     "test:rls": "node scripts/test-rls.mjs",
     "db:types": "supabase gen types typescript --local > lib/database.types.ts",
-    "supabase": "supabase"
+    "supabase": "supabase",
+    "test:rls:remote": "node scripts/test-rls.mjs --remote",
+    "test:e2e": "playwright test",
+    "seed:local": "node scripts/seed-local-users.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
@@ -21,6 +24,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
