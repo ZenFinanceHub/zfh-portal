@@ -33,3 +33,27 @@ export function formatDate(iso: string | null | undefined): string {
   const [y, m, d] = iso.slice(0, 10).split("-");
   return `${d}/${m}/${y}`;
 }
+
+// What clients see: plain English only.
+export const CLIENT_STAGE_LABELS: Record<string, string> = {
+  waiting_on_client: "Waiting on you",
+  in_progress: "In progress",
+  ready_to_review: "Ready to review",
+  completed: "Completed",
+  cancelled: "Closed",
+};
+
+export const CLIENT_REQUEST_STATUS_LABELS: Record<string, string> = {
+  open: "Waiting on you",
+  returned: "Needs another look",
+  submitted: "Received",
+  accepted: "Done",
+  cancelled: "No longer needed",
+};
+
+export const CLIENT_ACTION_LABELS: Record<string, string> = {
+  upload: "Upload files",
+  question: "Answer",
+  approval: "Review and approve",
+  consent: "Read and agree",
+};

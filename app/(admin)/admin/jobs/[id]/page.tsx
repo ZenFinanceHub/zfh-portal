@@ -183,7 +183,14 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                   <ul className="rounded-lg bg-ink p-3 text-sm">
                     {reqFiles.map((f) => (
                       <li key={f.id}>
-                        {f.original_name} <span className="text-text-muted">({SCAN_LABELS[f.scan_status]})</span>
+                        {f.scan_status === "infected" ? (
+                          f.original_name
+                        ) : (
+                          <a href={`/download/${f.id}`} className="inline-flex min-h-11 items-center break-all text-gold underline underline-offset-4">
+                            {f.original_name}
+                          </a>
+                        )}{" "}
+                        <span className="text-text-muted">({SCAN_LABELS[f.scan_status]})</span>
                       </li>
                     ))}
                   </ul>

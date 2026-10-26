@@ -435,6 +435,70 @@ select pg_temp.check((select count(*) from public.audit_log a join public.jobs j
                         and a.meta ->> 'stage' = 'in_progress') = 1,
                      'job stage changes are audited');
 
+-- ── Failed uploads can be discarded (migration 0003) ────────
+reset role;
+insert into public.files (id, client_id, job_id, storage_path, original_name, uploaded_by, scan_status) values
+  ('eeeeeeee-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000000', 'aaaaaaaa-1111-0000-0000-000000000000',
+   'aaaaaaaa-0000-0000-0000-000000000000/aaaaaaaa-1111-0000-0000-000000000000/eeeeeeee-1-failed.pdf', 'failed.pdf',
+   '00000000-0000-0000-0000-0000000000a1', 'pending'),
+  ('eeeeeeee-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000000', 'aaaaaaaa-1111-0000-0000-000000000000',
+   'aaaaaaaa-0000-0000-0000-000000000000/aaaaaaaa-1111-0000-0000-000000000000/eeeeeeee-2-stored.pdf', 'stored.pdf',
+   '00000000-0000-0000-0000-0000000000a1', 'pending'),
+  ('eeeeeeee-0000-0000-0000-000000000003', 'aaaaaaaa-0000-0000-0000-000000000000', 'aaaaaaaa-1111-0000-0000-000000000000',
+   'aaaaaaaa-0000-0000-0000-000000000000/aaaaaaaa-1111-0000-0000-000000000000/eeeeeeee-3-clean.pdf', 'clean.pdf',
+   '00000000-0000-0000-0000-0000000000a1', 'clean');
+insert into storage.objects (bucket_id, name) values
+  ('client-files', 'aaaaaaaa-0000-0000-0000-000000000000/aaaaaaaa-1111-0000-0000-000000000000/eeeeeeee-2-stored.pdf');
+
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+do $$ begin
+  perform public.discard_failed_upload('eeeeeeee-0000-0000-0000-000000000001');
+  raise exception 'RLS TEST FAILED: a colleague discarded someone else''s upload';
+exception when sqlstate 'P0002' then raise notice 'ok  nobody else can discard your upload';
+end $$;
+
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000b1';
+do $$ begin
+  perform public.discard_failed_upload('eeeeeeee-0000-0000-0000-000000000001');
+  raise exception 'RLS TEST FAILED: another client discarded an upload';
+exception when sqlstate 'P0002' then raise notice 'ok  another client cannot discard your upload';
+end $$;
+
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+do $$ begin
+  perform public.discard_failed_upload('eeeeeeee-0000-0000-0000-000000000002');
+  raise exception 'RLS TEST FAILED: discarded a file whose object was stored';
+exception when raise_exception then
+  if sqlerrm like 'RLS TEST FAILED%' then raise; end if;
+  raise notice 'ok  a file that was stored cannot be discarded';
+end $$;
+do $$ begin
+  perform public.discard_failed_upload('eeeeeeee-0000-0000-0000-000000000003');
+  raise exception 'RLS TEST FAILED: discarded a scanned file';
+exception when raise_exception then
+  if sqlerrm like 'RLS TEST FAILED%' then raise; end if;
+  raise notice 'ok  a scanned file cannot be discarded';
+end $$;
+select public.discard_failed_upload('eeeeeeee-0000-0000-0000-000000000001');
+select pg_temp.check((select count(*) from public.files where id = 'eeeeeeee-0000-0000-0000-000000000001') = 0
+                     and (select count(*) from public.files where id in
+                          ('eeeeeeee-0000-0000-0000-000000000002', 'eeeeeeee-0000-0000-0000-000000000003')) = 2,
+                     'owner can discard their own failed upload, and only that one');
+
+reset role;
+select pg_temp.check((select count(*) from public.audit_log
+                      where action = 'upload_discarded' and entity_id = 'eeeeeeee-0000-0000-0000-000000000001'
+                        and actor_id = '00000000-0000-0000-0000-0000000000a1') = 1,
+                     'a discarded upload is audited');
+
+set role anon;
+do $$ begin
+  perform public.discard_failed_upload('eeeeeeee-0000-0000-0000-000000000002');
+  raise exception 'RLS TEST FAILED: anon discarded an upload';
+exception when insufficient_privilege then raise notice 'ok  anonymous users cannot discard uploads';
+end $$;
+
 reset role;
 \o
 \echo ALL RLS TESTS PASSED

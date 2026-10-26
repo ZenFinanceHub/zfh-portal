@@ -353,6 +353,9 @@ isOneToOne: false
 "create_job_from_template":
 { Args: { "p_assigned_to": string,"p_client_id": string,"p_contributors"?: (string)[],"p_due_date": string,"p_period_end": string,"p_service": string,"p_template_id": string,"p_title": string }; Returns: string
                            },
+"discard_failed_upload":
+{ Args: { "p_file_id": string }; Returns: undefined
+                           },
 "insert_request_from_blueprint":
 { Args: { "b": Json,"p_due_date": string,"p_job_id": string,"p_sort": number }; Returns: string
                            },
