@@ -163,7 +163,35 @@ Rules are recorded in CLAUDE.md → Notifications. Build them exactly:
 
 ---
 
-## Prompt 8 — Audit, export and hardening
+## Prompt 8 — Claude connector (MCP)
+
+```
+Not built yet. A remote MCP server on the portal so Craig can manage requests from a Claude chat, e.g. paste a
+lender's request list verbatim and have it become portal requests.
+- Transport: Vercel route /api/mcp, streamable HTTP, added in claude.ai as a custom connector.
+- Auth: Supabase Auth OAuth 2.1 server. The connector acts as the signed-in staff user and requires aal2.
+  Every call runs with that user's session, so RLS and area rules apply. No service role.
+- Tools:
+  search_clients(query)
+  list_jobs(client_id, open_only)
+  get_outstanding(client_id or job_id)
+  create_job(client_id, template or service, title)
+  add_requests(job_id, requests[{kind, title, help_text, question_type, options, due_date}])
+  send_client_message(job_id, body)
+  add_internal_note(job_id, body)
+- Write tools take confirm=true. Without it they return a preview only and change nothing. Tool descriptions tell
+  Claude to always show the preview and get Craig's explicit "send" before calling again with confirm=true.
+- Lender text pasted verbatim is stored as an internal note; client-facing titles and help text are rewritten in
+  plain English.
+- New requests trigger the normal new-request client email (Prompt 7) and are audited with actor = the staff user
+  and meta source = 'claude_connector'.
+- Tests: RLS still applies via the connector (accounting-only staff cannot add finance requests); no write
+  happens without confirm; a client account cannot use the connector.
+```
+
+---
+
+## Prompt 9 — Audit, export and hardening
 
 ```
 - /admin/audit: filter audit_log by client, action, date; CSV export
@@ -179,7 +207,7 @@ Rules are recorded in CLAUDE.md → Notifications. Build them exactly:
 
 ---
 
-## Prompt 9 — Go live with pilot clients
+## Prompt 10 — Go live with pilot clients
 
 ```
 Prepare for a pilot with 3–5 clients:

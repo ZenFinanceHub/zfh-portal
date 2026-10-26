@@ -91,16 +91,17 @@ test("client uploads files and sends them; rejected files get friendly messages"
   await expect(page.getByText("huge.pdf is larger than 25 MB")).toBeVisible();
   await expect(page.getByText("virus.exe isn't a type we can accept")).toBeVisible();
   await expect(page.getByTestId("received-files")).toContainText("Statement March.pdf");
-  await expect(page.getByTestId("received-files")).toContainText("Received — being checked");
+  await expect(page.getByTestId("received-files")).toContainText(/Received( — being checked)?/);
   await noSideways(page);
 
   await page.getByRole("button", { name: "Send to ZenFinanceHub" }).click();
   await expect(page.getByText("Received — nothing more needed from you")).toBeVisible();
 
   // Stored the way CLAUDE.md says: row first (pending), then the object at {client}/{job}/{file}-{name}.
+  // The scan-file function may already have checked it by now.
   const { data: files } = await admin.from("files").select("*").eq("request_id", s.requests[0].id);
   expect(files).toHaveLength(1);
-  expect(files![0].scan_status).toBe("pending");
+  expect(["pending", "clean"]).toContain(files![0].scan_status);
   expect(files![0].storage_path).toBe(`${s.clientId}/${s.jobId}/${files![0].id}-statement-march.pdf`);
   expect(files![0].original_name).toBe("Statement March.pdf");
   const { data: stored } = await admin.storage.from("client-files").list(`${s.clientId}/${s.jobId}`);

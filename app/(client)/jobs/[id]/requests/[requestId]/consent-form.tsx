@@ -4,7 +4,15 @@ import { useActionState, useState } from "react";
 import { giveConsent, type ConsentState } from "./actions";
 import { cardClass, primaryButtonClass } from "@/components/ui/styles";
 
-export function ConsentForm({ requestId, agreeLabel }: { requestId: string; agreeLabel: string }) {
+export function ConsentForm({
+  requestId,
+  agreeLabel,
+  blocked = false,
+}: {
+  requestId: string;
+  agreeLabel: string;
+  blocked?: boolean;
+}) {
   const [state, action, pending] = useActionState<ConsentState, FormData>(giveConsent.bind(null, requestId), {});
   const [ticked, setTicked] = useState(false);
 
@@ -25,7 +33,7 @@ export function ConsentForm({ requestId, agreeLabel }: { requestId: string; agre
           {state.error}
         </p>
       ) : null}
-      <button type="submit" disabled={!ticked || pending} className={primaryButtonClass}>
+      <button type="submit" disabled={!ticked || pending || blocked} className={primaryButtonClass}>
         {pending ? "Sending…" : "I agree"}
       </button>
     </form>

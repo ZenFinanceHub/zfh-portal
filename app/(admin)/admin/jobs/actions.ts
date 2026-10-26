@@ -173,3 +173,14 @@ export async function addNote(jobId: string, prev: FormState, formData: FormData
   refresh(jobId);
   return { ok: true, version: (prev.version ?? 0) + 1 };
 }
+
+// ── Documents ────────────────────────────────────────────────
+// Staff can switch a document between "Share with client" and "Internal only". The database lets staff change
+// only this one column, in their own areas, and records the change in the audit trail.
+export async function setFileVisibility(jobId: string, fileId: string, formData: FormData) {
+  const visibility = z.enum(["client", "internal"]).safeParse(formData.get("visibility"));
+  if (!visibility.success || !z.uuid().safeParse(fileId).success) return;
+  const supabase = await createClient();
+  await supabase.from("files").update({ visibility: visibility.data }).eq("id", fileId).eq("job_id", jobId);
+  refresh(jobId);
+}

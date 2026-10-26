@@ -1,17 +1,19 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cardClass, primaryButtonClass, secondaryButtonClass } from "@/components/ui/styles";
 import {
   ACCEPT_ATTRIBUTE,
   SCAN_LABELS_CLIENT,
   checkFile,
+  isProblemFile,
   formatBytes,
   safeFilename,
   uploadMimeType,
 } from "@/lib/files";
 import { createClient } from "@/lib/supabase/client";
+import { sendFile } from "@/lib/upload";
 
 type Existing = { id: string; name: string; size: number; scan: string };
 type Item = {
@@ -25,22 +27,6 @@ type Item = {
 };
 
 type Props = { requestId: string; jobId: string; clientId: string; existing: Existing[] };
-
-// Sends the file to Supabase Storage with progress. (supabase-js has no upload progress.)
-function sendFile(path: string, token: string, file: File, mime: string, onProgress: (p: number) => void) {
-  return new Promise<void>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/client-files/${path}`);
-    xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-    xhr.setRequestHeader("apikey", process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
-    xhr.setRequestHeader("Content-Type", mime);
-    xhr.setRequestHeader("x-upsert", "false");
-    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
-    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`status ${xhr.status}`)));
-    xhr.onerror = () => reject(new Error("network"));
-    xhr.send(file);
-  });
-}
 
 export function UploadRequest({ requestId, jobId, clientId, existing }: Props) {
   const router = useRouter();
@@ -121,12 +107,20 @@ export function UploadRequest({ requestId, jobId, clientId, existing }: Props) {
 
   // What's already on the server, plus uploads from this visit that the server list hasn't caught up with.
   const knownIds = new Set(existing.map((e) => e.id));
-  const received = existing.filter((e) => e.scan !== "infected");
-  const rejectedByScan = existing.filter((e) => e.scan === "infected");
+  const received = existing.filter((e) => !isProblemFile(e.scan));
+  const rejectedByScan = existing.filter((e) => isProblemFile(e.scan));
   const justDone = items.filter((i) => i.state === "done" && i.id && !knownIds.has(i.id));
   const working = items.filter((i) => i.state === "uploading");
   const failed = items.filter((i) => i.state === "failed");
   const canSend = received.length + justDone.length > 0 && working.length === 0 && !sending;
+
+  // While files are being checked, look again every few seconds so the result shows without a manual refresh.
+  const stillChecking = existing.some((e) => e.scan === "pending") || justDone.length > 0;
+  useEffect(() => {
+    if (!stillChecking) return;
+    const timer = setInterval(() => router.refresh(), 4000);
+    return () => clearInterval(timer);
+  }, [stillChecking, router]);
 
   return (
     <div className={`${cardClass} space-y-5`}>
@@ -164,7 +158,7 @@ export function UploadRequest({ requestId, jobId, clientId, existing }: Props) {
         }}
       />
       <p className="text-sm text-text-muted">
-        You can add as many files as you need. PDFs, photos, spreadsheets and Word documents, up to 25 MB each.
+        You can add as many files as you need. PDFs, photos, CSV, Excel (.xlsx) and Word (.docx) files, up to 25 MB each.
       </p>
 
       {problems.length > 0 ? (
@@ -201,7 +195,7 @@ export function UploadRequest({ requestId, jobId, clientId, existing }: Props) {
 
       {rejectedByScan.map((f) => (
         <p key={f.id} role="alert" className="text-danger">
-          {f.name}: {SCAN_LABELS_CLIENT.infected}
+          {f.name}: {SCAN_LABELS_CLIENT[f.scan]}
         </p>
       ))}
 

@@ -5,7 +5,7 @@ import { useState } from "react";
 import { cardClass, primaryButtonClass } from "@/components/ui/styles";
 import { createClient } from "@/lib/supabase/client";
 
-export function ApproveRequest({ requestId }: { requestId: string }) {
+export function ApproveRequest({ requestId, blocked = false }: { requestId: string; blocked?: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +30,7 @@ export function ApproveRequest({ requestId }: { requestId: string }) {
           {error}
         </p>
       ) : null}
-      <button type="button" onClick={approve} disabled={busy} className={primaryButtonClass}>
+      <button type="button" onClick={approve} disabled={busy || blocked} className={primaryButtonClass}>
         {busy ? "Sending…" : "I approve"}
       </button>
     </div>

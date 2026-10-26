@@ -11,9 +11,7 @@ const ALLOWED_MIME = new Set([
   "image/heif",
   "image/webp",
   "text/csv",
-  "application/vnd.ms-excel",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ]);
 
@@ -27,13 +25,11 @@ const EXTENSION_MIME: Record<string, string> = {
   heif: "image/heif",
   webp: "image/webp",
   csv: "text/csv",
-  xls: "application/vnd.ms-excel",
   xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  doc: "application/msword",
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 };
 
-export const ACCEPT_ATTRIBUTE = ".pdf,.jpg,.jpeg,.png,.heic,.heif,.webp,.csv,.xls,.xlsx,.doc,.docx,image/*";
+export const ACCEPT_ATTRIBUTE = ".pdf,.jpg,.jpeg,.png,.heic,.heif,.webp,.csv,.xlsx,.docx,image/*";
 
 const extensionOf = (name: string) => name.split(".").pop()?.toLowerCase() ?? "";
 
@@ -49,7 +45,7 @@ export function checkFile(file: { name: string; type: string; size: number }): s
   if (file.size === 0) return `${file.name} is empty, so we haven't added it.`;
   if (file.size > MAX_UPLOAD_BYTES) return `${file.name} is larger than 25 MB. Please send a smaller file or split it up.`;
   if (!uploadMimeType(file)) {
-    return `${file.name} isn't a type we can accept. Please send a PDF, photo, spreadsheet or Word document.`;
+    return `${file.name} isn't a type we can accept. Please send a PDF, photo, CSV, Excel (.xlsx) or Word (.docx) file. Older .doc and .xls files can be saved as .docx or .xlsx first.`;
   }
   return null;
 }
@@ -71,12 +67,17 @@ export function safeFilename(name: string): string {
   return safeExt ? `${stem}.${safeExt}` : stem;
 }
 
+export const PROBLEM_FILE_MESSAGE = "There was a problem with this file — please upload it again";
+
 export const SCAN_LABELS_CLIENT: Record<string, string> = {
   pending: "Received — being checked",
-  clean: "Received — checked",
-  error: "Received — being checked",
-  infected: "We couldn't accept this file. Please send a different one.",
+  clean: "Received",
+  error: PROBLEM_FILE_MESSAGE,
+  infected: PROBLEM_FILE_MESSAGE,
 };
+
+/** Whether a scan result means the person needs to send the file again. */
+export const isProblemFile = (scan: string) => scan === "infected" || scan === "error";
 
 export function formatBytes(n: number): string {
   if (n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024))} KB`;

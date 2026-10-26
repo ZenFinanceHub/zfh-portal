@@ -123,14 +123,14 @@ isOneToOne: false
                   ]
                 },"files": {
                   Row: {
-                    "client_id": string,"created_at": string,"id": string,"job_id": string | null,"mime_type": string | null,"original_name": string,"request_id": string | null,"retain_until": string | null,"scan_status": string,"sha256": string | null,"size_bytes": number | null,"storage_path": string,"uploaded_by": string,"visibility": string
+                    "client_id": string,"created_at": string,"deleted_at": string | null,"deleted_by": string | null,"id": string,"job_id": string | null,"mime_type": string | null,"original_name": string,"request_id": string | null,"retain_until": string | null,"scan_attempts": number,"scan_retry": boolean,"scan_status": string,"scanned_at": string | null,"sha256": string | null,"size_bytes": number | null,"storage_path": string,"uploaded_by": string,"visibility": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "client_id": string,"created_at"?: string,"id"?: string,"job_id"?: string | null,"mime_type"?: string | null,"original_name": string,"request_id"?: string | null,"retain_until"?: string | null,"scan_status"?: string,"sha256"?: string | null,"size_bytes"?: number | null,"storage_path": string,"uploaded_by"?: string,"visibility"?: string
+                    "client_id": string,"created_at"?: string,"deleted_at"?: string | null,"deleted_by"?: string | null,"id"?: string,"job_id"?: string | null,"mime_type"?: string | null,"original_name": string,"request_id"?: string | null,"retain_until"?: string | null,"scan_attempts"?: number,"scan_retry"?: boolean,"scan_status"?: string,"scanned_at"?: string | null,"sha256"?: string | null,"size_bytes"?: number | null,"storage_path": string,"uploaded_by"?: string,"visibility"?: string
                   }
                   Update: {
-                    "client_id"?: string,"created_at"?: string,"id"?: string,"job_id"?: string | null,"mime_type"?: string | null,"original_name"?: string,"request_id"?: string | null,"retain_until"?: string | null,"scan_status"?: string,"sha256"?: string | null,"size_bytes"?: number | null,"storage_path"?: string,"uploaded_by"?: string,"visibility"?: string
+                    "client_id"?: string,"created_at"?: string,"deleted_at"?: string | null,"deleted_by"?: string | null,"id"?: string,"job_id"?: string | null,"mime_type"?: string | null,"original_name"?: string,"request_id"?: string | null,"retain_until"?: string | null,"scan_attempts"?: number,"scan_retry"?: boolean,"scan_status"?: string,"scanned_at"?: string | null,"sha256"?: string | null,"size_bytes"?: number | null,"storage_path"?: string,"uploaded_by"?: string,"visibility"?: string
                   }
                   Relationships: [
                     {
@@ -138,6 +138,12 @@ isOneToOne: false
       columns: ["client_id"]
 isOneToOne: false
       referencedRelation: "clients"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "files_deleted_by_fkey"
+      columns: ["deleted_by"]
+isOneToOne: false
+      referencedRelation: "profiles"
       referencedColumns: ["id"]
     },{
       foreignKeyName: "files_job_id_fkey"
@@ -347,11 +353,17 @@ isOneToOne: false
 "area_of_service":
 { Args: { "p_service": string }; Returns: string
                            },
+"attached_documents_ready":
+{ Args: { "p_request_id": string }; Returns: boolean
+                           },
 "can_access_client":
 { Args: { "p_client_id": string }; Returns: boolean
                            },
 "can_access_job":
 { Args: { "p_job_id": string }; Returns: boolean
+                           },
+"compute_file_retention":
+{ Args: { "p_client_id": string,"p_created": string,"p_job_id": string }; Returns: string
                            },
 "create_job_from_template":
 { Args: { "p_assigned_to": string,"p_client_id": string,"p_contributors"?: (string)[],"p_due_date": string,"p_period_end": string,"p_service": string,"p_template_id": string,"p_title": string }; Returns: string

@@ -5,6 +5,7 @@ import { ApproveRequest } from "./approve-request";
 import { ConsentForm } from "./consent-form";
 import { QuestionRequest } from "./question-request";
 import { UploadRequest } from "./upload-request";
+import { AutoRefresh } from "@/components/auto-refresh";
 import { cardClass, primaryButtonInlineClass } from "@/components/ui/styles";
 import { CONSENTS } from "@/lib/consents";
 import { formatDate } from "@/lib/labels";
@@ -140,7 +141,18 @@ export default async function RequestPage({
   }
 
   // Approvals and consents: the documents to look at, then the owner's action.
-  const documents = (files ?? []).filter((f) => f.scan_status === "clean");
+  // The documents staff attached. Until at least one has passed its check, the person can't approve or agree.
+  const attached = files ?? [];
+  const documents = attached.filter((f) => f.scan_status === "clean");
+  const stillChecking = attached.some((f) => f.scan_status === "pending");
+  const blocked = attached.length > 0 && documents.length === 0;
+  const blockedNote = blocked ? (
+    <p className={`${cardClass} !p-4`} role="status">
+      {stillChecking
+        ? "We're just checking the documents for you. This page will update in a moment, then you can continue."
+        : "There was a problem with the documents. We'll sort this out and let you know when they're ready."}
+    </p>
+  ) : null;
   const documentList = documents.length ? (
     <div className={`${cardClass} !p-4`}>
       <h2 className="mb-2 text-lg font-semibold">Documents to look at</h2>
@@ -161,9 +173,11 @@ export default async function RequestPage({
       <>
         {header}
         <div className="mt-6 space-y-4">
+          <AutoRefresh active={stillChecking} />
           {documentList}
+          {blockedNote}
           {isOwner ? (
-            <ApproveRequest requestId={requestId} />
+            <ApproveRequest requestId={requestId} blocked={blocked} />
           ) : (
             <p className={`${cardClass} !p-4`} role="note">
               Your account owner needs to approve this.
@@ -181,7 +195,9 @@ export default async function RequestPage({
     <>
       {header}
       <div className="mt-6 space-y-4">
+        <AutoRefresh active={stillChecking} />
         {documentList}
+        {blockedNote}
         <div className={`${cardClass} space-y-3`}>
           <h2 className="text-xl font-semibold">{wording.heading}</h2>
           {wording.paragraphs.map((p) => (
@@ -189,7 +205,7 @@ export default async function RequestPage({
           ))}
         </div>
         {isOwner ? (
-          <ConsentForm requestId={requestId} agreeLabel={wording.agreeLabel} />
+          <ConsentForm requestId={requestId} agreeLabel={wording.agreeLabel} blocked={blocked} />
         ) : (
           <p className={`${cardClass} !p-4`} role="note">
             Your account owner needs to agree to this.

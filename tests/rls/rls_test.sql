@@ -615,8 +615,8 @@ select pg_temp.check(pg_temp.seen('f2f2f2f2-0000-0000-0000-000000000001') = '0,0
                      'accounting staff see nothing of a finance job (job, requests, responses, files, messages, consents, storage), even with its ID');
 select pg_temp.check(pg_temp.changed($q$update public.jobs set title = 'Hacked' where id = 'f2f2f2f2-0000-0000-0000-000000000001'$q$) = 0
                      and pg_temp.changed($q$update public.requests set title = 'Hacked' where job_id = 'f2f2f2f2-0000-0000-0000-000000000001'$q$) = 0
-                     and pg_temp.changed($q$update public.files set original_name = 'x' where job_id = 'f2f2f2f2-0000-0000-0000-000000000001'$q$) = 0
-                     and pg_temp.changed($q$delete from public.files where job_id = 'f2f2f2f2-0000-0000-0000-000000000001'$q$) = 0
+                     and pg_temp.changed($q$update public.files set visibility = 'internal' where job_id = 'f2f2f2f2-0000-0000-0000-000000000001'$q$) = 0
+                     and pg_temp.denied($q$delete from public.files where job_id = 'f2f2f2f2-0000-0000-0000-000000000001'$q$)
                      and pg_temp.changed($q$delete from public.messages where job_id = 'f2f2f2f2-0000-0000-0000-000000000001'$q$) = 0,
                      'accounting staff cannot edit or delete anything on a finance job');
 select pg_temp.check(
@@ -664,7 +664,7 @@ select pg_temp.check(pg_temp.seen('a1a1a1a1-0000-0000-0000-000000000001') = '0,0
                      'finance staff see nothing of an accounting job (job, requests, responses, files, messages, consents, storage), even with its ID');
 select pg_temp.check(pg_temp.changed($q$update public.jobs set title = 'Hacked' where id = 'a1a1a1a1-0000-0000-0000-000000000001'$q$) = 0
                      and pg_temp.changed($q$update public.requests set title = 'Hacked' where job_id = 'a1a1a1a1-0000-0000-0000-000000000001'$q$) = 0
-                     and pg_temp.changed($q$delete from public.files where job_id = 'a1a1a1a1-0000-0000-0000-000000000001'$q$) = 0
+                     and pg_temp.denied($q$delete from public.files where job_id = 'a1a1a1a1-0000-0000-0000-000000000001'$q$)
                      and pg_temp.changed($q$delete from public.messages where job_id = 'a1a1a1a1-0000-0000-0000-000000000001'$q$) = 0,
                      'finance staff cannot edit or delete anything on an accounting job');
 select pg_temp.check(
@@ -735,6 +735,215 @@ select pg_temp.check((select count(*) from public.jobs) = 1
                      'a finance-only client sees no accounting data, nor another client''s finance job');
 
 reset role;
+-- ── Files: staff documents, scanning, visibility, retention (migration 0005) ──
+reset role;
+create or replace function pg_temp.raises(sql text, pattern text) returns boolean language plpgsql as $$
+begin execute sql; return false;
+exception when others then return sqlerrm like pattern; end $$;
+grant execute on function pg_temp.raises(text, text) to authenticated;
+
+insert into public.requests (id, job_id, kind, title, consent_type) values
+  ('a5a5a5a5-1111-0000-0000-000000000001', 'a1a1a1a1-0000-0000-0000-000000000001', 'approval', 'Approve accounts', null),
+  ('a5a5a5a5-1111-0000-0000-000000000002', 'a1a1a1a1-0000-0000-0000-000000000001', 'approval', 'Approve other', null),
+  ('a5a5a5a5-1111-0000-0000-000000000003', 'a1a1a1a1-0000-0000-0000-000000000001', 'consent',  'Engagement letter', 'engagement_letter');
+-- Staff documents: a shared draft (still being checked), an internal working paper (clean), a shared letter (checking).
+insert into public.files (id, client_id, job_id, request_id, storage_path, original_name, uploaded_by, visibility, scan_status) values
+  ('a5a5a5a5-f000-0000-0000-000000000001', 'a3a3a3a3-0000-0000-0000-000000000000', 'a1a1a1a1-0000-0000-0000-000000000001',
+   'a5a5a5a5-1111-0000-0000-000000000001',
+   'a3a3a3a3-0000-0000-0000-000000000000/a1a1a1a1-0000-0000-0000-000000000001/a5-draft.pdf', 'draft.pdf',
+   '00000000-0000-0000-0000-0000000000d1', 'client', 'pending'),
+  ('a5a5a5a5-f000-0000-0000-000000000002', 'a3a3a3a3-0000-0000-0000-000000000000', 'a1a1a1a1-0000-0000-0000-000000000001',
+   null,
+   'a3a3a3a3-0000-0000-0000-000000000000/a1a1a1a1-0000-0000-0000-000000000001/a5-working.pdf', 'working.pdf',
+   '00000000-0000-0000-0000-0000000000d1', 'internal', 'clean'),
+  ('a5a5a5a5-f000-0000-0000-000000000003', 'a3a3a3a3-0000-0000-0000-000000000000', 'a1a1a1a1-0000-0000-0000-000000000001',
+   'a5a5a5a5-1111-0000-0000-000000000003',
+   'a3a3a3a3-0000-0000-0000-000000000000/a1a1a1a1-0000-0000-0000-000000000001/a5-letter.pdf', 'letter.pdf',
+   '00000000-0000-0000-0000-0000000000d1', 'client', 'pending');
+insert into storage.objects (bucket_id, name) values
+  ('client-files', 'a3a3a3a3-0000-0000-0000-000000000000/a1a1a1a1-0000-0000-0000-000000000001/a5-draft.pdf'),
+  ('client-files', 'a3a3a3a3-0000-0000-0000-000000000000/a1a1a1a1-0000-0000-0000-000000000001/a5-working.pdf'),
+  ('client-files', 'a3a3a3a3-0000-0000-0000-000000000000/a1a1a1a1-0000-0000-0000-000000000001/a5-letter.pdf');
+set role authenticated;
+
+-- The client: sees shared documents (even while being checked) but never internal ones, nor their stored objects.
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000e1';
+select pg_temp.check((select count(*) from public.files where id in
+                        ('a5a5a5a5-f000-0000-0000-000000000001', 'a5a5a5a5-f000-0000-0000-000000000003')) = 2
+                     and (select count(*) from public.files where id = 'a5a5a5a5-f000-0000-0000-000000000002') = 0,
+                     'a client sees shared staff documents but never internal ones');
+select pg_temp.check((select count(*) from storage.objects where name like '%/a5-%') = 0,
+                     'a client cannot fetch a staff document until it is clean, nor an internal one even when clean');
+select pg_temp.check(
+  pg_temp.denied($q$insert into public.files (client_id, job_id, storage_path, original_name, visibility)
+        values ('a3a3a3a3-0000-0000-0000-000000000000', 'a1a1a1a1-0000-0000-0000-000000000001',
+                'a3a3a3a3-0000-0000-0000-000000000000/a1a1a1a1-0000-0000-0000-000000000001/c1-internal.pdf', 'c1.pdf', 'internal')$q$)
+  and pg_temp.denied($q$insert into public.files (client_id, job_id, request_id, storage_path, original_name)
+        values ('a3a3a3a3-0000-0000-0000-000000000000', 'a1a1a1a1-0000-0000-0000-000000000001', 'a5a5a5a5-1111-0000-0000-000000000001',
+                'a3a3a3a3-0000-0000-0000-000000000000/a1a1a1a1-0000-0000-0000-000000000001/c2-approval.pdf', 'c2.pdf')$q$)
+  and pg_temp.denied($q$insert into public.files (client_id, job_id, storage_path, original_name, scan_status)
+        values ('a3a3a3a3-0000-0000-0000-000000000000', 'a1a1a1a1-0000-0000-0000-000000000001',
+                'a3a3a3a3-0000-0000-0000-000000000000/a1a1a1a1-0000-0000-0000-000000000001/c3-clean.pdf', 'c3.pdf', 'clean')$q$),
+  'a client cannot add internal files, attach files to approvals, or mark their own file clean');
+select pg_temp.check(
+  pg_temp.changed($q$update public.files set visibility = 'internal' where id = 'a5a5a5a5-f000-0000-0000-000000000001'$q$) = 0
+  and pg_temp.denied($q$update public.files set scan_status = 'clean' where id = 'a5a5a5a5-f000-0000-0000-000000000001'$q$)
+  and pg_temp.denied($q$delete from public.files where id = 'a5a5a5a5-f000-0000-0000-000000000001'$q$),
+  'a client cannot change visibility or scan result, or delete a file');
+
+-- Approvals and consents with attached documents wait for a clean one.
+select pg_temp.check(
+  pg_temp.raises($q$select public.submit_request('a5a5a5a5-1111-0000-0000-000000000001')$q$, '%still being checked%')
+  and pg_temp.raises($q$select public.record_consent('a5a5a5a5-1111-0000-0000-000000000003', 'v1', 'wording')$q$, '%still being checked%'),
+  'a client cannot approve or consent while the attached document is still being checked');
+reset role;
+update public.files set scan_status = 'error' where id in
+  ('a5a5a5a5-f000-0000-0000-000000000001', 'a5a5a5a5-f000-0000-0000-000000000003');
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000e1';
+select pg_temp.check(
+  pg_temp.raises($q$select public.submit_request('a5a5a5a5-1111-0000-0000-000000000001')$q$, '%still being checked%'),
+  'a document that failed its check does not unlock the approval');
+reset role;
+update public.files set scan_status = 'clean' where id in
+  ('a5a5a5a5-f000-0000-0000-000000000001', 'a5a5a5a5-f000-0000-0000-000000000003');
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000e1';
+select pg_temp.check((select count(*) from storage.objects where name like '%/a5-draft.pdf' or name like '%/a5-letter.pdf') = 2
+                     and (select count(*) from storage.objects where name like '%/a5-working.pdf') = 0,
+                     'once clean, the client can fetch shared documents but still not the internal one');
+select public.submit_request('a5a5a5a5-1111-0000-0000-000000000001');
+select public.record_consent('a5a5a5a5-1111-0000-0000-000000000003', 'v1', 'wording');
+select pg_temp.check((select count(*) from public.requests where status = 'submitted'
+                        and id in ('a5a5a5a5-1111-0000-0000-000000000001', 'a5a5a5a5-1111-0000-0000-000000000003')) = 2,
+                     'with a clean document the client can approve and consent');
+-- An approval with no documents attached still works as before.
+select public.submit_request('a5a5a5a5-1111-0000-0000-000000000002');
+
+-- Accounting staff: add and switch documents in their area only, and cannot touch scan results or retention.
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000d1';
+select pg_temp.check(
+  pg_temp.changed($q$insert into public.files (client_id, job_id, request_id, storage_path, original_name, visibility)
+        values ('a3a3a3a3-0000-0000-0000-000000000000', 'a1a1a1a1-0000-0000-0000-000000000001', 'a5a5a5a5-1111-0000-0000-000000000002',
+                'a3a3a3a3-0000-0000-0000-000000000000/a1a1a1a1-0000-0000-0000-000000000001/s1-shared.pdf', 's1.pdf', 'client')$q$) = 1
+  and pg_temp.changed($q$insert into public.files (client_id, job_id, storage_path, original_name, visibility)
+        values ('a3a3a3a3-0000-0000-0000-000000000000', 'a1a1a1a1-0000-0000-0000-000000000001',
+                'a3a3a3a3-0000-0000-0000-000000000000/a1a1a1a1-0000-0000-0000-000000000001/s2-internal.pdf', 's2.pdf', 'internal')$q$) = 1,
+  'accounting staff can add shared and internal documents to an accounting job');
+select pg_temp.check((select scan_status from public.files where storage_path like '%/s1-shared.pdf') = 'pending',
+                     'staff documents always start as pending');
+select pg_temp.check(
+  pg_temp.denied($q$insert into public.files (client_id, job_id, storage_path, original_name, scan_status)
+        values ('a3a3a3a3-0000-0000-0000-000000000000', 'a1a1a1a1-0000-0000-0000-000000000001',
+                'a3a3a3a3-0000-0000-0000-000000000000/a1a1a1a1-0000-0000-0000-000000000001/s3-clean.pdf', 's3.pdf', 'clean')$q$)
+  and pg_temp.denied($q$insert into public.files (client_id, job_id, request_id, storage_path, original_name)
+        values ('a3a3a3a3-0000-0000-0000-000000000000', 'a1a1a1a1-0000-0000-0000-000000000001', 'a1a1a1a1-1111-0000-0000-000000000001',
+                'a3a3a3a3-0000-0000-0000-000000000000/a1a1a1a1-0000-0000-0000-000000000001/s4-question.pdf', 's4.pdf')$q$)
+  and pg_temp.denied($q$insert into public.files (client_id, job_id, storage_path, original_name)
+        values ('a3a3a3a3-0000-0000-0000-000000000000', 'f2f2f2f2-0000-0000-0000-000000000001',
+                'a3a3a3a3-0000-0000-0000-000000000000/f2f2f2f2-0000-0000-0000-000000000001/s5-fin.pdf', 's5.pdf')$q$),
+  'staff cannot insert a pre-cleaned file, attach to a question, or add to a job outside their area');
+select pg_temp.check(
+  pg_temp.denied($q$update public.files set scan_status = 'clean' where id = 'a5a5a5a5-f000-0000-0000-000000000001'$q$)
+  and pg_temp.denied($q$update public.files set retain_until = '1990-01-01' where id = 'a5a5a5a5-f000-0000-0000-000000000001'$q$)
+  and pg_temp.denied($q$update public.files set deleted_at = now() where id = 'a5a5a5a5-f000-0000-0000-000000000001'$q$)
+  and pg_temp.denied($q$delete from public.files where id = 'a5a5a5a5-f000-0000-0000-000000000001'$q$),
+  'staff cannot change scan results, retention dates or tombstones, or delete file records');
+select pg_temp.check(
+  pg_temp.changed($q$update public.files set visibility = 'internal' where id = 'a5a5a5a5-f000-0000-0000-000000000001'$q$) = 1
+  and pg_temp.changed($q$update public.files set visibility = 'internal' where job_id = 'f2f2f2f2-0000-0000-0000-000000000001'$q$) = 0,
+  'staff can switch visibility in their own area only');
+reset role;
+select pg_temp.check(exists (select 1 from public.audit_log
+                              where entity = 'files' and entity_id = 'a5a5a5a5-f000-0000-0000-000000000001'
+                                and meta ->> 'visibility' = 'internal' and actor_id = '00000000-0000-0000-0000-0000000000d1'),
+                     'a visibility change is audited with who did it');
+select pg_temp.check(not exists (select 1 from public.audit_log where meta::text ilike '%draft.pdf%'),
+                     'the audit trail holds no file names');
+
+-- Finance-only staff cannot see or switch the accounting documents.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000d2';
+select pg_temp.check((select count(*) from public.files where job_id = 'a1a1a1a1-0000-0000-0000-000000000001') = 0
+                     and (select count(*) from storage.objects where name like '%/a5-%') = 0
+                     and pg_temp.changed($q$update public.files set visibility = 'client' where id = 'a5a5a5a5-f000-0000-0000-000000000002'$q$) = 0,
+                     'finance staff cannot see or switch accounting documents');
+
+-- Tombstones disappear from every list and the stored object is unreachable.
+reset role;
+update public.files set deleted_at = now(), deleted_by = '00000000-0000-0000-0000-00000000000a'
+ where id = 'a5a5a5a5-f000-0000-0000-000000000003';
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000e1';
+select pg_temp.check((select count(*) from public.files where id = 'a5a5a5a5-f000-0000-0000-000000000003') = 0
+                     and (select count(*) from storage.objects where name like '%/a5-letter.pdf') = 0,
+                     'a deleted (tombstoned) file is gone for clients');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000d1';
+select pg_temp.check((select count(*) from public.files where id = 'a5a5a5a5-f000-0000-0000-000000000003') = 0
+                     and (select count(*) from storage.objects where name like '%/a5-letter.pdf') = 0,
+                     'a deleted (tombstoned) file is gone for staff');
+
+-- Retention dates: 6 years after the period end, or after upload; onboarding follows the client's end date.
+reset role;
+insert into public.jobs (id, client_id, title, service, period_end) values
+  ('a6a6a6a6-0000-0000-0000-000000000001', 'a3a3a3a3-0000-0000-0000-000000000000', 'Retention year-end', 'year_end', '2024-03-31'),
+  ('a6a6a6a6-0000-0000-0000-000000000002', 'a3a3a3a3-0000-0000-0000-000000000000', 'Retention ad hoc',   'other',    null),
+  ('a6a6a6a6-0000-0000-0000-000000000003', 'a3a3a3a3-0000-0000-0000-000000000000', 'Retention onboarding', 'onboarding', null);
+insert into public.files (id, client_id, job_id, storage_path, original_name, uploaded_by, retain_until) values
+  ('a6a6a6a6-f000-0000-0000-000000000001', 'a3a3a3a3-0000-0000-0000-000000000000', 'a6a6a6a6-0000-0000-0000-000000000001',
+   'a3a3a3a3-0000-0000-0000-000000000000/a6a6a6a6-0000-0000-0000-000000000001/r1.pdf', 'r1.pdf', '00000000-0000-0000-0000-0000000000e1', '1990-01-01'),
+  ('a6a6a6a6-f000-0000-0000-000000000002', 'a3a3a3a3-0000-0000-0000-000000000000', 'a6a6a6a6-0000-0000-0000-000000000002',
+   'a3a3a3a3-0000-0000-0000-000000000000/a6a6a6a6-0000-0000-0000-000000000002/r2.pdf', 'r2.pdf', '00000000-0000-0000-0000-0000000000e1', null),
+  ('a6a6a6a6-f000-0000-0000-000000000003', 'a3a3a3a3-0000-0000-0000-000000000000', 'a6a6a6a6-0000-0000-0000-000000000003',
+   'a3a3a3a3-0000-0000-0000-000000000000/a6a6a6a6-0000-0000-0000-000000000003/r3.pdf', 'r3.pdf', '00000000-0000-0000-0000-0000000000e1', null);
+select pg_temp.check((select retain_until from public.files where id = 'a6a6a6a6-f000-0000-0000-000000000001') = date '2030-03-31',
+                     'retention is 6 years after the job period end (a supplied date is ignored)');
+select pg_temp.check((select retain_until from public.files where id = 'a6a6a6a6-f000-0000-0000-000000000002')
+                       = ((now() at time zone 'Europe/London')::date + interval '6 years')::date,
+                     'with no period end, retention is 6 years after upload');
+select pg_temp.check((select retain_until from public.files where id = 'a6a6a6a6-f000-0000-0000-000000000003') is null,
+                     'onboarding documents have no retention date while the client is active');
+update public.clients set status = 'former' where id = 'a3a3a3a3-0000-0000-0000-000000000000';
+select pg_temp.check((select ended_at from public.clients where id = 'a3a3a3a3-0000-0000-0000-000000000000')
+                       = (now() at time zone 'Europe/London')::date
+                     and (select retain_until from public.files where id = 'a6a6a6a6-f000-0000-0000-000000000003')
+                       = ((now() at time zone 'Europe/London')::date + interval '5 years')::date
+                     and (select retain_until from public.files where id = 'a6a6a6a6-f000-0000-0000-000000000001') = date '2030-03-31',
+                     'marking a client former stamps the end date and sets onboarding retention to 5 years after it');
+update public.clients set status = 'active' where id = 'a3a3a3a3-0000-0000-0000-000000000000';
+select pg_temp.check((select ended_at from public.clients where id = 'a3a3a3a3-0000-0000-0000-000000000000') is null
+                     and (select retain_until from public.files where id = 'a6a6a6a6-f000-0000-0000-000000000003') is null,
+                     'reinstating a client clears the end date and the onboarding retention dates');
+
+-- The migration backfills existing files with the same rule (clear the dates, recompute, same answers).
+update public.files set retain_until = null
+ where id in ('a6a6a6a6-f000-0000-0000-000000000001', 'a6a6a6a6-f000-0000-0000-000000000002');
+update public.files set retain_until = public.compute_file_retention(job_id, client_id, created_at)
+ where id in ('a6a6a6a6-f000-0000-0000-000000000001', 'a6a6a6a6-f000-0000-0000-000000000002');
+select pg_temp.check((select retain_until from public.files where id = 'a6a6a6a6-f000-0000-0000-000000000001') = date '2030-03-31'
+                     and (select retain_until from public.files where id = 'a6a6a6a6-f000-0000-0000-000000000002')
+                       = ((now() at time zone 'Europe/London')::date + interval '6 years')::date,
+                     'the retention backfill gives the same dates as the insert trigger');
+
+-- The bucket accepts only the agreed types, and the working folders are private.
+select pg_temp.check((select allowed_mime_types from storage.buckets where id = 'client-files')
+                       @> array['application/pdf', 'image/jpeg', 'image/png', 'image/heic', 'image/heif', 'image/webp', 'text/csv',
+                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+                     and not ((select allowed_mime_types from storage.buckets where id = 'client-files')
+                              && array['application/msword', 'application/vnd.ms-excel']),
+                     'the upload bucket allows PDF, photos, CSV, DOCX and XLSX and no longer .doc or .xls');
+select pg_temp.check((select not public from storage.buckets where id = 'job-zips')
+                     and not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects'
+                                      and (qual ilike '%job-zips%' or with_check ilike '%job-zips%')),
+                     'the temporary zip bucket is private and has no user policies');
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000e1';
+select pg_temp.check(pg_temp.denied($q$select * from private.config$q$) and not has_schema_privilege('authenticated', 'private', 'usage')
+                     and pg_temp.denied($q$select public.compute_file_retention(null, null, now())$q$),
+                     'environment settings (including the webhook secret) are not reachable by signed-in users');
+reset role;
+
 reset role;
 \o
 \echo ALL RLS TESTS PASSED

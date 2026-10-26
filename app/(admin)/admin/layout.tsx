@@ -8,7 +8,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     { href: "/admin", label: "Dashboard" },
     { href: "/admin/clients", label: "Clients" },
     { href: "/admin/templates", label: "Templates" },
-    ...(isAdmin ? [{ href: "/admin/settings", label: "Settings" }] : []),
+    ...(isAdmin
+      ? [
+          { href: "/admin/retention", label: "Retention" },
+          { href: "/admin/settings", label: "Settings" },
+        ]
+      : []),
   ];
 
   return (

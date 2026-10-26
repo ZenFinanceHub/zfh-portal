@@ -8,15 +8,18 @@ import {
   addRequest,
   cancelRequest,
   returnRequest,
+  setFileVisibility,
   setFinanceStage,
   setStage,
   updateRequest,
 } from "../actions";
+import { AddDocument, ScanAgain, ZipButtons, type AttachTarget } from "./documents";
 import { AddRequest, EditRequest, NoteForm, ReturnForm } from "./request-forms";
 import { cardClass, inputClass, secondaryButtonClass } from "@/components/ui/styles";
 import { formatAnswer } from "@/lib/answers";
 import { AREA_LABELS, isArea } from "@/lib/areas";
 import { todayLondon } from "@/lib/dates";
+import { formatBytes } from "@/lib/files";
 import { STAGE_LABELS, formatDate } from "@/lib/labels";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -36,10 +39,10 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const SCAN_LABELS: Record<string, string> = {
-  pending: "scanning",
+  pending: "being checked",
   clean: "clean",
-  infected: "blocked",
-  error: "scan failed",
+  infected: "blocked: failed the virus check",
+  error: "check failed",
 };
 
 type Blueprint = { kind?: string; title?: string; help_text?: string };
@@ -75,6 +78,24 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
         supabase.from("consents").select("request_id, created_at, wording_version").in("request_id", requestIds),
       ])
     : [{ data: [] }, { data: [] }, { data: [] }];
+
+  const [{ data: allFiles }, { data: lenderConsent }] = await Promise.all([
+    supabase
+      .from("files")
+      .select(
+        "id, request_id, original_name, size_bytes, scan_status, visibility, retain_until, created_at, uploader:profiles!files_uploaded_by_fkey(is_staff)",
+      )
+      .eq("job_id", id)
+      .order("created_at", { ascending: false }),
+    supabase.from("consents").select("id").eq("job_id", id).eq("consent_type", "lender_share").limit(1).maybeSingle(),
+  ]);
+  const attachTargets: AttachTarget[] = (requests ?? [])
+    .filter(
+      (r) =>
+        (r.status === "open" || r.status === "returned") &&
+        (r.kind === "approval" || (r.kind === "consent" && r.consent_type === "engagement_letter")),
+    )
+    .map((r) => ({ id: r.id, label: `${KIND_LABELS[r.kind]}: ${r.title}` }));
 
   const today = todayLondon();
   const pending = (Array.isArray(job.pending_blueprints) ? job.pending_blueprints : []) as Blueprint[];
@@ -274,6 +295,53 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
         ) : null}
 
         <AddRequest action={addRequest.bind(null, id)} />
+      </section>
+
+      {/* ── Documents ─────────────────────────────────────── */}
+      <section aria-labelledby="documents-heading" className="space-y-4">
+        <h2 id="documents-heading" className="text-xl font-semibold">
+          Documents
+        </h2>
+        <ZipButtons jobId={id} isFinance={job.service === "finance_application"} lenderConsent={!!lenderConsent} />
+        <AddDocument jobId={id} clientId={job.client_id} targets={attachTargets} />
+
+        {(allFiles ?? []).length === 0 ? <p className="text-text-muted">No documents yet.</p> : null}
+        <ul className="space-y-3">
+          {(allFiles ?? []).map((f) => {
+            const fromStaff = f.uploader?.is_staff === true;
+            const attached = (requests ?? []).find((r) => r.id === f.request_id);
+            return (
+              <li key={f.id} className={`${cardClass} !p-4 space-y-2`} data-testid="document">
+                <p className="break-all font-medium">
+                  {f.scan_status === "infected" ? (
+                    f.original_name
+                  ) : (
+                    <a href={`/download/${f.id}`} className="inline-flex min-h-11 items-center text-gold underline underline-offset-4">
+                      {f.original_name}
+                    </a>
+                  )}
+                </p>
+                <p className="text-sm text-text-muted">
+                  {fromStaff ? "Added by staff" : "Sent by the client"} · {formatBytes(f.size_bytes ?? 0)} ·{" "}
+                  {formatDate(f.created_at)} ·{" "}
+                  <span data-testid="document-visibility">{f.visibility === "client" ? "Shared with client" : "Internal only"}</span>{" "}
+                  · <span data-testid="document-scan">{SCAN_LABELS[f.scan_status]}</span>
+                  {attached ? ` · Attached to: ${attached.title}` : ""}
+                  {f.retain_until ? ` · Keep until ${formatDate(f.retain_until)}` : ""}
+                </p>
+                <div className="flex flex-wrap items-center gap-x-4">
+                  <form action={setFileVisibility.bind(null, id, f.id)}>
+                    <input type="hidden" name="visibility" value={f.visibility === "client" ? "internal" : "client"} />
+                    <button type="submit" className="inline-flex min-h-11 items-center text-gold underline underline-offset-4">
+                      {f.visibility === "client" ? "Make internal only" : "Share with client"}
+                    </button>
+                  </form>
+                  {f.scan_status === "error" || f.scan_status === "pending" ? <ScanAgain fileId={f.id} /> : null}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
       </section>
 
       {/* ── Internal notes ────────────────────────────────── */}

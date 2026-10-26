@@ -69,7 +69,7 @@ schema_paths = []
 enabled = true
 # Specifies an ordered list of seed files to load during db reset.
 # Supports glob patterns relative to supabase directory: "./seeds/*.sql"
-sql_paths = ["./seed.sql"]
+sql_paths = ["./seed.sql", "./seed_local.sql"]
 
 [db.network_restrictions]
 # Enable management of network restrictions.
@@ -429,3 +429,23 @@ content_path = "./supabase/templates/magic_link.html"
 [functions.invite-contact]
 enabled = true
 verify_jwt = false
+
+# These functions check the caller themselves (or only act on rows that are genuinely pending),
+# which also works with the project's newer signing keys, so the gateway check is off.
+[functions.scan-file]
+enabled = true
+verify_jwt = false
+
+[functions.job-zip]
+enabled = true
+verify_jwt = false
+
+[functions.retention-delete]
+enabled = true
+verify_jwt = false
+
+# LOCAL ONLY. The mock scanner treats the standard EICAR test string as a virus so tests can exercise that path.
+# (It refuses to run on the hosted project; hosted functions read their own secrets.)
+[edge_runtime.secrets]
+SCANNER_PROVIDER = "mock"
+SCAN_WEBHOOK_SECRET = "local-development-only-scan-secret"
