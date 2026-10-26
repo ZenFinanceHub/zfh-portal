@@ -414,3 +414,18 @@ enabled = true
 # formatted with uppercase keywords, indent 2, max width 180, trailing commas,
 # and column/key alignment. Set to "null" to emit raw, unformatted SQL.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":180,\"commaStyle\":\"trailing\"}"
+
+# Local copies of the dashboard email templates (same content as pasted into the live project).
+[auth.email.template.invite]
+subject = "ZenFinanceHub has set up your secure client portal"
+content_path = "./supabase/templates/invite.html"
+
+[auth.email.template.magic_link]
+subject = "Your ZenFinanceHub sign-in link"
+content_path = "./supabase/templates/magic_link.html"
+
+# invite-contact checks the caller's JWT itself (signed in, staff, aal2), which also works
+# with the project's newer signing keys, so the gateway check is off.
+[functions.invite-contact]
+enabled = true
+verify_jwt = false

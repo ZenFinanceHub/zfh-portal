@@ -13,7 +13,7 @@ CLAUDE.md sits in the repo root, so Claude Code already knows the rules, brand a
 4. In Supabase → Authentication → Providers → Email: turn **off** "Allow new users to sign up". Turn **on** MFA (TOTP).
 5. Create a Vercel project from the repo; set function region `lhr1`.
 6. DNS: add `portal.zenfinancehub.com` as a CNAME to Vercel.
-7. ~~Email provider~~ — done: Resend is already verified on zenfinancehub.com. Create a Resend API key for the portal when you reach Prompt 7 and store it only as a Supabase Edge Function secret.
+7. ~~Email provider~~ — done: Resend sending domain `mail.zenfinancehub.com` is verified (EU region); From `ZenFinanceHub <portal@mail.zenfinancehub.com>`, Reply-To craig@zen-finance.co.uk. Supabase auth emails already go through Resend SMTP. Create a Resend API key for the portal when you reach Prompt 7 and store it only as a Supabase Edge Function secret.
 
 ---
 

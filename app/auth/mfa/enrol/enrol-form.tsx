@@ -3,10 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { inputClass, primaryButtonClass } from "@/components/ui/styles";
+import { inputClass, primaryButtonClass, secondaryButtonClass } from "@/components/ui/styles";
 import { totpCodeSchema } from "@/lib/validation/auth";
 
 type Enrolment = { factorId: string; qrCode: string; secret: string };
+
+const groupInFours = (s: string) => s.match(/.{1,4}/g)?.join(" ") ?? s;
 
 export function EnrolForm() {
   const router = useRouter();
@@ -14,6 +16,19 @@ export function EnrolForm() {
   const [enrolment, setEnrolment] = useState<Enrolment | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showKey, setShowKey] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  async function copyKey() {
+    if (!enrolment) return;
+    try {
+      await navigator.clipboard.writeText(enrolment.secret);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError("Couldn't copy automatically. Select the key above and copy it.");
+    }
+  }
 
   useEffect(() => {
     if (started.current) return;
@@ -75,9 +90,31 @@ export function EnrolForm() {
             className="mx-auto rounded-lg bg-white p-2"
           />
           <p className="text-sm text-text-muted">
-            Can&apos;t scan? Enter this key in your app instead:{" "}
-            <code className="break-all text-text">{enrolment.secret}</code>
+            Open your authenticator app (e.g. Microsoft or Google Authenticator) and scan from
+            inside the app, not your phone camera.
           </p>
+          <button
+            type="button"
+            onClick={() => setShowKey((v) => !v)}
+            aria-expanded={showKey}
+            aria-controls="setup-key"
+            className="min-h-11 text-base text-gold underline underline-offset-4 hover:text-gold-light"
+          >
+            Can&apos;t scan it?
+          </button>
+          {showKey ? (
+            <div id="setup-key" className="space-y-3 rounded-lg border border-line p-4">
+              <p className="text-sm text-text-muted">
+                In your app, choose to enter a setup key manually, then type this in:
+              </p>
+              <code className="block break-words text-lg tracking-wider text-text">
+                {groupInFours(enrolment.secret)}
+              </code>
+              <button type="button" onClick={copyKey} className={secondaryButtonClass}>
+                {copied ? "Copied" : "Copy key"}
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : (
         <p className="text-text-muted" role="status">

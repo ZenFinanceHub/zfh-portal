@@ -162,6 +162,89 @@ select pg_temp.check((select count(*) from public.audit_log) > 0, 'audit log rec
 select pg_temp.check((select count(*) from public.audit_log where meta::text like '%12500%') = 0,
                      'audit log holds no answer content');
 
+-- ── clients / client_contacts writes are staff-only ─────────
+reset role;
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000c1', 'invitee@example.com');
+
+-- A client owner cannot create clients, edit clients, or add / change / remove contacts.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+do $$ begin
+  insert into public.clients (name, entity_type) values ('Owner-made client', 'other');
+  raise exception 'RLS TEST FAILED: client owner created a client';
+exception when insufficient_privilege then raise notice 'ok  client owner cannot create a client';
+end $$;
+do $$ declare n int; begin
+  update public.clients set name = 'Hacked' where id = 'aaaaaaaa-0000-0000-0000-000000000000';
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'RLS TEST FAILED: client owner edited their client'; end if;
+  raise notice 'ok  client owner cannot edit a client';
+end $$;
+do $$ begin
+  insert into public.client_contacts (client_id, profile_id, role)
+  values ('aaaaaaaa-0000-0000-0000-000000000000', '00000000-0000-0000-0000-0000000000c1', 'owner');
+  raise exception 'RLS TEST FAILED: client owner added a contact (invite)';
+exception when insufficient_privilege then raise notice 'ok  client owner cannot add a contact to their own client';
+end $$;
+do $$ begin
+  insert into public.client_contacts (client_id, profile_id, role)
+  values ('bbbbbbbb-0000-0000-0000-000000000000', '00000000-0000-0000-0000-0000000000a1', 'owner');
+  raise exception 'RLS TEST FAILED: client owner added themselves to another client';
+exception when insufficient_privilege then raise notice 'ok  client owner cannot add themselves to another client';
+end $$;
+do $$ declare n int; begin
+  update public.client_contacts set role = 'owner'
+   where client_id = 'aaaaaaaa-0000-0000-0000-000000000000' and profile_id = '00000000-0000-0000-0000-0000000000a2';
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'RLS TEST FAILED: client owner promoted a contributor'; end if;
+  delete from public.client_contacts
+   where client_id = 'aaaaaaaa-0000-0000-0000-000000000000' and profile_id = '00000000-0000-0000-0000-0000000000a2';
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'RLS TEST FAILED: client owner removed a contact'; end if;
+  raise notice 'ok  client owner cannot change or remove contacts';
+end $$;
+
+-- A contributor cannot add contacts or clients either.
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a2';
+do $$ begin
+  insert into public.client_contacts (client_id, profile_id, role)
+  values ('aaaaaaaa-0000-0000-0000-000000000000', '00000000-0000-0000-0000-0000000000c1', 'contributor');
+  raise exception 'RLS TEST FAILED: contributor added a contact';
+exception when insufficient_privilege then raise notice 'ok  contributor cannot add a contact';
+end $$;
+do $$ begin
+  insert into public.clients (name, entity_type) values ('Contributor-made client', 'other');
+  raise exception 'RLS TEST FAILED: contributor created a client';
+exception when insufficient_privilege then raise notice 'ok  contributor cannot create a client';
+end $$;
+
+-- Anonymous users cannot write either.
+reset role;
+set role anon;
+do $$ begin
+  insert into public.client_contacts (client_id, profile_id, role)
+  values ('aaaaaaaa-0000-0000-0000-000000000000', '00000000-0000-0000-0000-0000000000c1', 'owner');
+  raise exception 'RLS TEST FAILED: anon added a contact';
+exception when insufficient_privilege then raise notice 'ok  anonymous users cannot add contacts';
+end $$;
+
+-- Staff can create / edit clients and add contacts.
+reset role;
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+insert into public.clients (id, name, entity_type) values ('cccccccc-0000-0000-0000-000000000000', 'Staff-made client', 'sole_trader');
+update public.clients set status = 'prospect' where id = 'cccccccc-0000-0000-0000-000000000000';
+insert into public.client_contacts (client_id, profile_id, role)
+values ('cccccccc-0000-0000-0000-000000000000', '00000000-0000-0000-0000-0000000000c1', 'owner');
+select pg_temp.check((select count(*) from public.clients where id = 'cccccccc-0000-0000-0000-000000000000' and status = 'prospect') = 1,
+                     'staff can create and edit a client');
+select pg_temp.check((select count(*) from public.client_contacts where client_id = 'cccccccc-0000-0000-0000-000000000000') = 1,
+                     'staff can add a contact');
+
+-- A newly added owner sees only their own client.
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000c1';
+select pg_temp.check((select count(*) from public.clients) = 1, 'newly added contact sees only their client');
+
 reset role;
 \o
 \echo ALL RLS TESTS PASSED

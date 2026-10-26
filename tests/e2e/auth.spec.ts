@@ -1,37 +1,16 @@
-import { createHmac } from "node:crypto";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import {
   adminClient,
   ensureClientOwner,
   ensureUser,
-  magicLinkToken,
 } from "../../scripts/local-supabase.mjs";
+import { signInAs, totp } from "./helpers";
 
 const admin = adminClient();
 const CLIENT_EMAIL = "e2e.client@example.com";
 const STAFF_EMAIL = "e2e.staff.nomfa@example.com";
 const MFA_STAFF_EMAIL = "e2e.staff.mfa@example.com";
 
-// RFC 6238 TOTP (SHA-1, 6 digits, 30s) so the test can act as the authenticator app.
-function totp(secret: string, atMs = Date.now()) {
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-  let bits = "";
-  for (const ch of secret.replace(/=+$/, "").toUpperCase()) {
-    bits += alphabet.indexOf(ch).toString(2).padStart(5, "0");
-  }
-  const key = Buffer.from(bits.match(/.{8}/g)!.map((b) => parseInt(b, 2)));
-  const counter = Buffer.alloc(8);
-  counter.writeBigUInt64BE(BigInt(Math.floor(atMs / 30000)));
-  const h = createHmac("sha1", key).update(counter).digest();
-  const offset = h[h.length - 1] & 0xf;
-  return ((h.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).toString().padStart(6, "0");
-}
-
-// Signs in through the real /auth/callback route using a one-off token for the user.
-async function signInAs(page: Page, email: string) {
-  const token = await magicLinkToken(admin, email);
-  await page.goto(`/auth/callback?token_hash=${token}&type=magiclink`);
-}
 
 test.beforeAll(async () => {
   const clientId = await ensureUser(admin, { email: CLIENT_EMAIL });
@@ -75,7 +54,13 @@ test("staff can enrol an authenticator, then sign in again with a code", async (
   await signInAs(page, MFA_STAFF_EMAIL);
   await expect(page).toHaveURL(/\/auth\/mfa\/enrol$/);
   await expect(page.getByAltText(/QR code/)).toBeVisible();
-  const secret = (await page.locator("code").innerText()).trim();
+  // The setup key is hidden until asked for, then shown in groups of four.
+  await expect(page.locator("code")).toHaveCount(0);
+  await page.getByRole("button", { name: "Can't scan it?" }).click();
+  const shown = (await page.locator("code").innerText()).trim();
+  expect(shown).toMatch(/^([A-Z2-7]{4} )*[A-Z2-7]{1,4}$/);
+  const secret = shown.replace(/ /g, "");
+  await expect(page.getByRole("button", { name: "Copy key" })).toBeVisible();
 
   await page.getByLabel("6-digit code").fill("000000");
   await page.getByRole("button", { name: /confirm/i }).click();

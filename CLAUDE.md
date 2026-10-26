@@ -9,7 +9,7 @@ Owner/admin: Craig Patterson. Live at `portal.zenfinancehub.com`, linked from `z
 - Supabase: Auth, Postgres with row-level security (RLS), Storage, Edge Functions, pg_cron
 - Supabase project region: **London (eu-west-2)**. Vercel functions region: **lhr1**
 - `@supabase/ssr` for auth in server components, route handlers and middleware
-- Transactional email: **Resend** (domain `zenfinancehub.com` already verified — DKIM, SPF `send` and DMARC records exist). From: `ZenFinanceHub <portal@zenfinancehub.com>`. zenfinancehub.com has no MX records, so always set Reply-To: craig@zen-finance.co.uk
+- Transactional email: **Resend** (sending domain `mail.zenfinancehub.com`, verified in Resend, EU region). From: `ZenFinanceHub <portal@mail.zenfinancehub.com>`. Always set Reply-To: craig@zen-finance.co.uk. Supabase auth emails (invites, magic links) also go out through Resend SMTP.
 - Supabase project ref: `vvxrqwcmyisiweecqgyn` (London). Vercel project: `zfh-portal`, domain `portal.zenfinancehub.com`
 - Zod for all input validation; generated Supabase types (`supabase gen types`) — never hand-write DB types
 

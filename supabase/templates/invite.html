@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light only">
+<title>ZenFinanceHub has set up your secure client portal</title>
+</head>
+<body style="margin:0;padding:0;background-color:#0A0A0A;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">Set up your access to the ZenFinanceHub client portal.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#0A0A0A" style="background-color:#0A0A0A;">
+  <tr>
+    <td align="center" style="padding:24px 12px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;">
+        <tr>
+          <td bgcolor="#C9A84C" style="background-color:#C9A84C;padding:16px 24px;border-radius:8px 8px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:20px;font-weight:bold;color:#0A0A0A;">
+            ZenFinanceHub
+          </td>
+        </tr>
+        <tr>
+          <td bgcolor="#151515" style="background-color:#151515;padding:32px 24px;border:1px solid #2A2A2A;border-top:0;border-radius:0 0 8px 8px;font-family:Arial,Helvetica,sans-serif;color:#FFFFFF;">
+            <h1 style="margin:0 0 16px 0;font-size:24px;line-height:1.3;color:#FFFFFF;">ZenFinanceHub has set up your secure client portal</h1>
+            <p style="margin:0 0 16px 0;font-size:16px;line-height:1.5;color:#FFFFFF;">
+              You can now send us documents, answer questions and approve work in one safe place, instead of using email.
+            </p>
+            <p style="margin:0 0 24px 0;font-size:16px;line-height:1.5;color:#FFFFFF;">
+              Select the button below to set up your access. There&#39;s no password to remember &mdash; next time, you&#39;ll just ask for a sign-in link.
+            </p>
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td bgcolor="#C9A84C" style="background-color:#C9A84C;border-radius:8px;">
+                  <a href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&amp;type=invite" style="display:inline-block;padding:14px 28px;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold;color:#0A0A0A;text-decoration:none;border-radius:8px;">Set up my access</a>
+                </td>
+              </tr>
+            </table>
+            <p style="margin:24px 0 8px 0;font-size:14px;line-height:1.5;color:#B5B5B5;">
+              If the button doesn&#39;t work, copy and paste this link into your browser:
+            </p>
+            <p style="margin:0 0 24px 0;font-size:14px;line-height:1.5;word-break:break-all;">
+              <a href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&amp;type=invite" style="color:#E3C77A;">{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&amp;type=invite</a>
+            </p>
+            <p style="margin:0;font-size:14px;line-height:1.5;color:#B5B5B5;">
+              This link can only be used once. If you weren&#39;t expecting this email, you can ignore it.
+            </p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>

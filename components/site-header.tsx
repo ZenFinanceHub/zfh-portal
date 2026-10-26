@@ -1,5 +1,5 @@
 import { signOut } from "@/app/auth/actions";
-import { secondaryButtonClass } from "@/components/ui/styles";
+import { headerButtonClass } from "@/components/ui/styles";
 
 export function SiteHeader({ signedIn = true }: { signedIn?: boolean }) {
   return (
@@ -10,7 +10,7 @@ export function SiteHeader({ signedIn = true }: { signedIn?: boolean }) {
           <form action={signOut}>
             <button
               type="submit"
-              className={`${secondaryButtonClass} border-ink/40 text-ink hover:border-ink`}
+              className={headerButtonClass}
             >
               Sign out
             </button>
