@@ -1,11 +1,17 @@
+import Link from "next/link";
+import { NotificationSettings } from "./notifications";
 import { StaffRow } from "./staff-row";
 import { cardClass } from "@/components/ui/styles";
 import { getMyAreas } from "@/lib/admin/areas";
 import { orderedAreas } from "@/lib/areas";
 import { createClient } from "@/lib/supabase/server";
 
-// Settings has one tab for now (Staff). Notification rules join it in a later step.
-export default async function SettingsPage() {
+const TABS = [
+  { id: "staff", label: "Staff" },
+  { id: "notifications", label: "Notifications" },
+] as const;
+
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const { isAdmin } = await getMyAreas();
 
   if (!isAdmin) {
@@ -19,6 +25,33 @@ export default async function SettingsPage() {
     );
   }
 
+  const { tab: requested } = await searchParams;
+  const tab = requested === "notifications" ? "notifications" : "staff";
+
+  return (
+    <>
+      <h1 className="mb-4 text-2xl font-semibold sm:text-3xl">Settings</h1>
+      <nav aria-label="Settings" className="mb-6 flex gap-2 border-b border-line">
+        {TABS.map((t) => (
+          <Link
+            key={t.id}
+            href={t.id === "staff" ? "/admin/settings" : `/admin/settings?tab=${t.id}`}
+            aria-current={t.id === tab ? "page" : undefined}
+            className={`inline-flex min-h-11 items-center border-b-2 px-2 text-base ${
+              t.id === tab ? "border-gold font-semibold" : "border-transparent text-text-muted hover:text-gold-light"
+            }`}
+          >
+            {t.label}
+          </Link>
+        ))}
+      </nav>
+
+      {tab === "notifications" ? <NotificationSettings /> : <StaffTab />}
+    </>
+  );
+}
+
+async function StaffTab() {
   const supabase = await createClient();
   const { data: staff, error } = await supabase
     .from("profiles")
@@ -28,13 +61,6 @@ export default async function SettingsPage() {
 
   return (
     <>
-      <h1 className="mb-4 text-2xl font-semibold sm:text-3xl">Settings</h1>
-      <nav aria-label="Settings" className="mb-6 border-b border-line">
-        <span className="inline-flex min-h-11 items-center border-b-2 border-gold px-2 text-base font-semibold" aria-current="page">
-          Staff
-        </span>
-      </nav>
-
       <p className="mb-4 text-text-muted">
         Choose which areas each team member can work in. They only see the clients, jobs and files in those areas.
         New team members start with no access.

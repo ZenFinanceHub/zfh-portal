@@ -7,3 +7,7 @@ insert into private.config (key, value) values
   ('scan_file_url', 'http://host.docker.internal:55321/functions/v1/scan-file'),
   ('scan_webhook_secret', 'local-development-only-scan-secret')
 on conflict (key) do update set value = excluded.value;
+
+-- Notifications: notify_url and notify_webhook_secret are deliberately NOT set locally. The cron job and the urgent
+-- trigger therefore call nothing, and the tests run send-notifications themselves (with a set clock and the
+-- emails returned instead of sent), so nothing happens behind their back.

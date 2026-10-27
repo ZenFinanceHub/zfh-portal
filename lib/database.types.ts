@@ -255,16 +255,94 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
-                },"profiles": {
+                },"notification_settings": {
                   Row: {
-                    "created_at": string,"email": string,"full_name": string | null,"id": string,"is_staff": boolean,"phone": string | null,"staff_areas": (string)[],"staff_role": string | null
+                    "bank_holiday_region": string,"client_bundle_minutes": number,"digest_enabled": boolean,"digest_time": string,"fallback_email": string,"id": boolean,"quiet_end": string,"quiet_start": string,"reminder_days": (number)[],"reminders_enabled": boolean,"staff_batch_minutes": number,"updated_at": string,"updated_by": string | null,"urgent_approvals": boolean,"urgent_finance_activity": boolean,"urgent_lender_consents": boolean
                   }
                   ComputedFields: never
                   Insert: {
-                    "created_at"?: string,"email": string,"full_name"?: string | null,"id": string,"is_staff"?: boolean,"phone"?: string | null,"staff_areas"?: (string)[],"staff_role"?: string | null
+                    "bank_holiday_region"?: string,"client_bundle_minutes"?: number,"digest_enabled"?: boolean,"digest_time"?: string,"fallback_email"?: string,"id"?: boolean,"quiet_end"?: string,"quiet_start"?: string,"reminder_days"?: (number)[],"reminders_enabled"?: boolean,"staff_batch_minutes"?: number,"updated_at"?: string,"updated_by"?: string | null,"urgent_approvals"?: boolean,"urgent_finance_activity"?: boolean,"urgent_lender_consents"?: boolean
                   }
                   Update: {
-                    "created_at"?: string,"email"?: string,"full_name"?: string | null,"id"?: string,"is_staff"?: boolean,"phone"?: string | null,"staff_areas"?: (string)[],"staff_role"?: string | null
+                    "bank_holiday_region"?: string,"client_bundle_minutes"?: number,"digest_enabled"?: boolean,"digest_time"?: string,"fallback_email"?: string,"id"?: boolean,"quiet_end"?: string,"quiet_start"?: string,"reminder_days"?: (number)[],"reminders_enabled"?: boolean,"staff_batch_minutes"?: number,"updated_at"?: string,"updated_by"?: string | null,"urgent_approvals"?: boolean,"urgent_finance_activity"?: boolean,"urgent_lender_consents"?: boolean
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "notification_settings_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"notifications_log": {
+                  Row: {
+                    "attempts": number,"client_id": string | null,"created_at": string,"dedupe_key": string,"event_count": number,"id": number,"job_id": string | null,"kind": string,"last_error": string | null,"sent_at": string | null,"status": string,"updated_at": string,"window_end": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "attempts"?: number,"client_id"?: string | null,"created_at"?: string,"dedupe_key": string,"event_count"?: number,"id"?: never,"job_id"?: string | null,"kind": string,"last_error"?: string | null,"sent_at"?: string | null,"status": string,"updated_at"?: string,"window_end"?: string | null
+                  }
+                  Update: {
+                    "attempts"?: number,"client_id"?: string | null,"created_at"?: string,"dedupe_key"?: string,"event_count"?: number,"id"?: never,"job_id"?: string | null,"kind"?: string,"last_error"?: string | null,"sent_at"?: string | null,"status"?: string,"updated_at"?: string,"window_end"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "notifications_log_client_id_fkey"
+      columns: ["client_id"]
+isOneToOne: false
+      referencedRelation: "clients"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "notifications_log_job_id_fkey"
+      columns: ["job_id"]
+isOneToOne: false
+      referencedRelation: "jobs"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"notifications_queue": {
+                  Row: {
+                    "audience": string,"client_id": string,"event": string,"id": number,"job_id": string,"occurred_at": string,"processed_at": string | null,"request_id": string | null,"request_kind": string | null,"state": string,"urgent_reason": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "audience": string,"client_id": string,"event": string,"id"?: never,"job_id": string,"occurred_at"?: string,"processed_at"?: string | null,"request_id"?: string | null,"request_kind"?: string | null,"state"?: string,"urgent_reason"?: string | null
+                  }
+                  Update: {
+                    "audience"?: string,"client_id"?: string,"event"?: string,"id"?: never,"job_id"?: string,"occurred_at"?: string,"processed_at"?: string | null,"request_id"?: string | null,"request_kind"?: string | null,"state"?: string,"urgent_reason"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "notifications_queue_client_id_fkey"
+      columns: ["client_id"]
+isOneToOne: false
+      referencedRelation: "clients"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "notifications_queue_job_id_fkey"
+      columns: ["job_id"]
+isOneToOne: false
+      referencedRelation: "jobs"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "notifications_queue_request_id_fkey"
+      columns: ["request_id"]
+isOneToOne: false
+      referencedRelation: "requests"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"profiles": {
+                  Row: {
+                    "created_at": string,"email": string,"email_reminders": boolean,"full_name": string | null,"id": string,"is_staff": boolean,"phone": string | null,"staff_areas": (string)[],"staff_role": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"email": string,"email_reminders"?: boolean,"full_name"?: string | null,"id": string,"is_staff"?: boolean,"phone"?: string | null,"staff_areas"?: (string)[],"staff_role"?: string | null
+                  }
+                  Update: {
+                    "created_at"?: string,"email"?: string,"email_reminders"?: boolean,"full_name"?: string | null,"id"?: string,"is_staff"?: boolean,"phone"?: string | null,"staff_areas"?: (string)[],"staff_role"?: string | null
                   }
                   Relationships: [
                     
@@ -337,6 +415,20 @@ isOneToOne: false
                   }
                   Update: {
                     "active"?: boolean,"area"?: never,"created_at"?: string,"description"?: string | null,"id"?: string,"name"?: string,"requests"?: NonNullable<Json>,"service"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"uk_bank_holidays": {
+                  Row: {
+                    "holiday_date": string,"name": string,"region": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "holiday_date": string,"name": string,"region": string
+                  }
+                  Update: {
+                    "holiday_date"?: string,"name"?: string,"region"?: string
                   }
                   Relationships: [
                     

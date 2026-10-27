@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { AREAS } from "@/lib/areas";
 import { createClient } from "@/lib/supabase/server";
+import { holidaySchema, notificationSettingsSchema } from "@/lib/validation/notifications";
 
 export type StaffAreasState = { ok?: boolean; error?: string };
 
@@ -24,4 +25,56 @@ export async function saveStaffAreas(
 
   revalidatePath("/admin/settings");
   return { ok: true };
+}
+
+// ── Notifications ────────────────────────────────────────────
+export type NotificationState = { ok?: boolean; error?: string };
+
+// Only the admin can write these tables (row-level security); every change is audited by the database.
+export async function saveNotificationSettings(_prev: NotificationState, formData: FormData): Promise<NotificationState> {
+  const flag = (name: string) => formData.get(name) === "on";
+  const parsed = notificationSettingsSchema.safeParse({
+    staff_batch_minutes: formData.get("staff_batch_minutes"),
+    client_bundle_minutes: formData.get("client_bundle_minutes"),
+    quiet_start: formData.get("quiet_start"),
+    quiet_end: formData.get("quiet_end"),
+    urgent_approvals: flag("urgent_approvals"),
+    urgent_lender_consents: flag("urgent_lender_consents"),
+    urgent_finance_activity: flag("urgent_finance_activity"),
+    digest_enabled: flag("digest_enabled"),
+    digest_time: formData.get("digest_time"),
+    fallback_email: String(formData.get("fallback_email") ?? "").trim(),
+    reminders_enabled: flag("reminders_enabled"),
+    reminder_days: String(formData.get("reminder_days") ?? ""),
+    bank_holiday_region: formData.get("bank_holiday_region"),
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Please check the settings and try again." };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("notification_settings").update(parsed.data).eq("id", true).select("id");
+  if (error || !data?.length) return { error: "We couldn't save that. Only the admin can change these settings." };
+
+  revalidatePath("/admin/settings");
+  return { ok: true };
+}
+
+export async function addBankHoliday(region: string, _prev: NotificationState, formData: FormData): Promise<NotificationState> {
+  const parsed = holidaySchema.safeParse({ holiday_date: formData.get("holiday_date"), name: formData.get("name") });
+  if (!parsed.success || !["scotland", "england_wales"].includes(region)) {
+    return { error: parsed.success ? "Something went wrong. Please refresh and try again." : parsed.error.issues[0].message };
+  }
+  const supabase = await createClient();
+  const { error } = await supabase.from("uk_bank_holidays").insert({ region, ...parsed.data });
+  if (error) {
+    return { error: error.code === "23505" ? "That day is already on the list." : "We couldn't add that. Only the admin can change the list." };
+  }
+  revalidatePath("/admin/settings");
+  return { ok: true };
+}
+
+export async function removeBankHoliday(region: string, date: string): Promise<void> {
+  if (!["scotland", "england_wales"].includes(region) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+  const supabase = await createClient();
+  await supabase.from("uk_bank_holidays").delete().eq("region", region).eq("holiday_date", date);
+  revalidatePath("/admin/settings");
 }

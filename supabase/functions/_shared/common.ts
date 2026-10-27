@@ -75,3 +75,13 @@ export async function sendAlert(subject: string, intro: string, link: string): P
     return false;
   }
 }
+
+/** Compares in constant time, so a shared secret cannot be guessed from response timing. Unset means nothing gets in. */
+export function sameSecret(given: string | null, expected: string | undefined): boolean {
+  if (!given || !expected) return false;
+  const a = new TextEncoder().encode(given);
+  const b = new TextEncoder().encode(expected);
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < Math.max(a.length, b.length); i++) diff |= (a[i] ?? 0) ^ (b[i] ?? 0);
+  return diff === 0;
+}

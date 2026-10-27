@@ -944,6 +944,186 @@ select pg_temp.check(pg_temp.denied($q$select * from private.config$q$) and not 
                      'environment settings (including the webhook secret) are not reachable by signed-in users');
 reset role;
 
+
+-- ── Notifications (migration 0006) ──────────────────────────
+reset role;
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-0000000000f1', 'notify.owner@example.com'),
+  ('00000000-0000-0000-0000-0000000000f2', 'notify.contributor@example.com');
+insert into public.clients (id, name, entity_type) values
+  ('a7a7a7a7-0000-0000-0000-000000000000', 'Notify Ltd', 'limited_company');
+insert into public.client_contacts values
+  ('a7a7a7a7-0000-0000-0000-000000000000', '00000000-0000-0000-0000-0000000000f1', 'owner',       now()),
+  ('a7a7a7a7-0000-0000-0000-000000000000', '00000000-0000-0000-0000-0000000000f2', 'contributor', now());
+insert into public.jobs (id, client_id, title, service) values
+  ('a7a7a7a7-1111-0000-0000-000000000001', 'a7a7a7a7-0000-0000-0000-000000000000', 'Notify year-end', 'year_end'),
+  ('a7a7a7a7-2222-0000-0000-000000000002', 'a7a7a7a7-0000-0000-0000-000000000000', 'Notify finance',  'finance_application');
+insert into public.job_contacts values ('a7a7a7a7-1111-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000f2');
+
+create or replace function pg_temp.rejects(sql text) returns boolean language plpgsql as $$
+begin execute sql; return false;
+exception when check_violation or insufficient_privilege then return true; end $$;
+
+-- Creating requests tells the client's contacts (one queue row each; the function bundles them).
+insert into public.requests (id, job_id, kind, title, question_type, consent_type) values
+  ('a7a7a7a7-1111-1111-0000-000000000001', 'a7a7a7a7-1111-0000-0000-000000000001', 'upload',   'Notify uploads', null, null),
+  ('a7a7a7a7-1111-2222-0000-000000000002', 'a7a7a7a7-1111-0000-0000-000000000001', 'question', 'Notify question', 'text', null),
+  ('a7a7a7a7-1111-3333-0000-000000000003', 'a7a7a7a7-1111-0000-0000-000000000001', 'approval', 'Notify approval', null, null),
+  ('a7a7a7a7-2222-1111-0000-000000000004', 'a7a7a7a7-2222-0000-0000-000000000002', 'upload',   'Notify finance upload', null, null),
+  ('a7a7a7a7-2222-2222-0000-000000000005', 'a7a7a7a7-2222-0000-0000-000000000002', 'consent',  'Notify lender consent', null, 'lender_share'),
+  ('a7a7a7a7-1111-4444-0000-000000000006', 'a7a7a7a7-1111-0000-0000-000000000001', 'consent',  'Notify engagement', null, 'engagement_letter'),
+  ('a7a7a7a7-1111-5555-0000-000000000007', 'a7a7a7a7-1111-0000-0000-000000000001', 'upload',   'Notify staff upload', null, null);
+select pg_temp.check((select count(*) from public.notifications_queue
+                       where client_id = 'a7a7a7a7-0000-0000-0000-000000000000' and audience = 'client' and event = 'request_created') = 7
+                     and (select count(*) from public.notifications_queue
+                           where client_id = 'a7a7a7a7-0000-0000-0000-000000000000' and audience = 'staff') = 0,
+                     'creating requests queues one client notification each and nothing for staff');
+
+-- Staff submitting on a client's behalf alerts nobody.
+update public.requests set status = 'submitted', submitted_by = '00000000-0000-0000-0000-00000000000a'
+ where id = 'a7a7a7a7-1111-5555-0000-000000000007';
+select pg_temp.check((select count(*) from public.notifications_queue
+                       where client_id = 'a7a7a7a7-0000-0000-0000-000000000000' and audience = 'staff') = 0,
+                     'a request submitted by staff on the client''s behalf does not alert staff');
+
+-- The client's own actions, through the real functions.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000f1';
+insert into public.responses (request_id, author_id, answer)
+values ('a7a7a7a7-1111-2222-0000-000000000002', '00000000-0000-0000-0000-0000000000f1', '{"value":"x"}');
+select public.submit_request('a7a7a7a7-1111-2222-0000-000000000002');
+select public.submit_request('a7a7a7a7-1111-3333-0000-000000000003');
+select public.record_consent('a7a7a7a7-2222-2222-0000-000000000005', 'v1', 'wording', null);
+select public.record_consent('a7a7a7a7-1111-4444-0000-000000000006', 'v1', 'wording', null);
+insert into public.messages (job_id, author_id, body) values
+  ('a7a7a7a7-1111-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000f1', 'A message from the client');
+reset role;
+-- Two uploads, submitted as the owner (the file steps are tested elsewhere): one on the finance application.
+update public.requests set status = 'submitted', submitted_by = '00000000-0000-0000-0000-0000000000f1'
+ where id = 'a7a7a7a7-2222-1111-0000-000000000004';
+update public.requests set status = 'submitted', submitted_by = '00000000-0000-0000-0000-0000000000f1'
+ where id = 'a7a7a7a7-1111-1111-0000-000000000001';
+
+select pg_temp.check((select count(*) from public.notifications_queue
+                       where client_id = 'a7a7a7a7-0000-0000-0000-000000000000' and audience = 'staff') = 7,
+                     'each client action queues one staff notification (2 uploads, an answer, an approval, 2 consents, a message)');
+select pg_temp.check((select urgent_reason from public.notifications_queue where audience = 'staff' and request_id = 'a7a7a7a7-1111-3333-0000-000000000003') = 'approval'
+                     and (select urgent_reason from public.notifications_queue where audience = 'staff' and request_id = 'a7a7a7a7-2222-2222-0000-000000000005') = 'lender_share'
+                     and (select urgent_reason from public.notifications_queue where audience = 'staff' and request_id = 'a7a7a7a7-2222-1111-0000-000000000004') = 'finance'
+                     and (select urgent_reason from public.notifications_queue where audience = 'staff' and request_id = 'a7a7a7a7-1111-4444-0000-000000000006') is null
+                     and (select urgent_reason from public.notifications_queue where audience = 'staff' and request_id = 'a7a7a7a7-1111-2222-0000-000000000002') is null
+                     and (select urgent_reason from public.notifications_queue where audience = 'staff' and request_id = 'a7a7a7a7-1111-1111-0000-000000000001') is null,
+                     'approvals, lender consents and finance-application uploads are marked urgent; ordinary items are not');
+select pg_temp.check((select count(*) from public.notifications_queue
+                       where client_id = 'a7a7a7a7-0000-0000-0000-000000000000' and event = 'client_message' and audience = 'staff') = 1,
+                     'a client message queues a staff notification');
+
+-- Staff messages tell the client; internal notes tell nobody.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+insert into public.messages (job_id, author_id, body) values
+  ('a7a7a7a7-1111-0000-0000-000000000001', '00000000-0000-0000-0000-00000000000a', 'A reply from staff');
+insert into public.messages (job_id, author_id, body, internal) values
+  ('a7a7a7a7-1111-0000-0000-000000000001', '00000000-0000-0000-0000-00000000000a', 'A private staff note', true);
+reset role;
+select pg_temp.check((select count(*) from public.notifications_queue
+                       where client_id = 'a7a7a7a7-0000-0000-0000-000000000000' and event = 'staff_message' and audience = 'client') = 1
+                     and (select count(*) from public.notifications_queue
+                           where client_id = 'a7a7a7a7-0000-0000-0000-000000000000' and event in ('staff_message', 'client_message')) = 2,
+                     'a staff message queues a client notification, and an internal note queues nothing');
+select pg_temp.check((select count(*) from public.notifications_queue
+                       where client_id = 'a7a7a7a7-0000-0000-0000-000000000000'
+                         and (to_jsonb(notifications_queue)::text ilike '%Notify uploads%'
+                              or to_jsonb(notifications_queue)::text ilike '%from the client%'
+                              or to_jsonb(notifications_queue)::text ilike '%private staff note%')) = 0,
+                     'the queue holds no titles or message text');
+
+-- Clients cannot see or touch the queue, the log, the settings or the bank holidays.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000f1';
+select pg_temp.check(pg_temp.denied($q$select * from public.notifications_queue$q$)
+                     and pg_temp.denied($q$insert into public.notifications_queue (audience, event, client_id, job_id) values ('staff', 'client_message', 'a7a7a7a7-0000-0000-0000-000000000000', 'a7a7a7a7-1111-0000-0000-000000000001')$q$)
+                     and (select count(*) from public.notifications_log) = 0
+                     and (select count(*) from public.notification_settings) = 0
+                     and (select count(*) from public.uk_bank_holidays) = 0,
+                     'an owner cannot read the queue, the log, the settings or the bank holidays');
+update public.notification_settings set staff_batch_minutes = 1;
+select pg_temp.check(pg_temp.rejects($q$insert into public.uk_bank_holidays values ('scotland', '2030-01-01', 'Mine')$q$)
+                     and pg_temp.rejects($q$insert into public.notifications_log (dedupe_key, kind, status) values ('x', 'marker', 'sent')$q$),
+                     'an owner cannot add bank holidays or write to the log');
+reset role;
+select pg_temp.check((select staff_batch_minutes from public.notification_settings) = 15,
+                     'an owner cannot change the notification settings');
+
+-- The reminder preference: on by default; people change only their own.
+select pg_temp.check((select email_reminders from public.profiles where id = '00000000-0000-0000-0000-0000000000f1'), 'reminders are on by default');
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000f1';
+update public.profiles set email_reminders = false where id = '00000000-0000-0000-0000-0000000000f1';
+update public.profiles set email_reminders = false where id = '00000000-0000-0000-0000-0000000000f2';
+reset role;
+select pg_temp.check(not (select email_reminders from public.profiles where id = '00000000-0000-0000-0000-0000000000f1')
+                     and (select email_reminders from public.profiles where id = '00000000-0000-0000-0000-0000000000f2'),
+                     'a client can switch their own reminders off but not anyone else''s');
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000f2';
+select pg_temp.check(pg_temp.denied($q$update public.profiles set is_staff = true where id = auth.uid()$q$),
+                     'the reminder preference does not open up other profile columns');
+
+-- Staff who are not the admin cannot read or change the rules.
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000d1';
+select pg_temp.check((select count(*) from public.notification_settings) = 0
+                     and (select count(*) from public.uk_bank_holidays) = 0
+                     and (select count(*) from public.notifications_log) = 0
+                     and pg_temp.denied($q$select * from public.notifications_queue$q$)
+                     and pg_temp.rejects($q$insert into public.uk_bank_holidays values ('scotland', '2030-01-01', 'Mine')$q$),
+                     'ordinary staff cannot read the notification rules, the log or the queue, or edit bank holidays');
+update public.notification_settings set staff_batch_minutes = 1;
+reset role;
+select pg_temp.check((select staff_batch_minutes from public.notification_settings) = 15, 'ordinary staff cannot change the notification settings');
+
+-- The admin edits the rules; bad values are refused; changes are audited; the queue stays closed to everyone.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select pg_temp.check((select count(*) from public.notification_settings) = 1, 'the admin can read the notification settings');
+update public.notification_settings set staff_batch_minutes = 20, digest_time = '17:30';
+select pg_temp.check((select staff_batch_minutes from public.notification_settings) = 20, 'the admin can change the notification settings');
+select pg_temp.check(pg_temp.rejects($q$update public.notification_settings set staff_batch_minutes = 0$q$)
+                     and pg_temp.rejects($q$update public.notification_settings set quiet_start = '07:00', quiet_end = '08:00'$q$)
+                     and pg_temp.rejects($q$update public.notification_settings set reminder_days = '{0}'$q$)
+                     and pg_temp.rejects($q$update public.notification_settings set fallback_email = 'not an email'$q$)
+                     and pg_temp.rejects($q$update public.notification_settings set bank_holiday_region = 'mars'$q$),
+                     'nonsense notification settings are refused');
+insert into public.uk_bank_holidays values ('scotland', '2030-01-01', 'Test day');
+delete from public.uk_bank_holidays where region = 'scotland' and holiday_date = '2030-01-01';
+select pg_temp.check(pg_temp.denied($q$select * from public.notifications_queue$q$), 'even the admin cannot read the queue through the API');
+reset role;
+select pg_temp.check((select meta -> 'changed' from public.audit_log where action = 'notification_settings_changed' order by id desc limit 1)
+                       @> '["digest_time", "staff_batch_minutes"]'::jsonb
+                     and exists (select 1 from public.audit_log where action = 'bank_holiday_added' and meta ->> 'date' = '2030-01-01')
+                     and exists (select 1 from public.audit_log where action = 'bank_holiday_removed' and meta ->> 'date' = '2030-01-01'),
+                     'changes to the rules and the bank holidays are audited');
+
+-- The bank holiday lists: Scotland and England & Wales, 2026 to 2028, all on weekdays.
+select pg_temp.check((select count(*) from public.uk_bank_holidays where region = 'scotland' and holiday_date between '2026-01-01' and '2028-12-31') >= 27
+                     and (select count(*) from public.uk_bank_holidays where region = 'england_wales' and holiday_date between '2026-01-01' and '2028-12-31') >= 24
+                     and not exists (select 1 from public.uk_bank_holidays where extract(isodow from holiday_date) > 5),
+                     'bank holidays are seeded for Scotland and England and Wales for 2026 to 2028, none on a weekend');
+select pg_temp.check(exists (select 1 from public.uk_bank_holidays where region = 'scotland' and holiday_date = '2026-08-03')
+                     and not exists (select 1 from public.uk_bank_holidays where region = 'scotland' and holiday_date = '2026-08-31')
+                     and exists (select 1 from public.uk_bank_holidays where region = 'england_wales' and holiday_date = '2026-08-31')
+                     and exists (select 1 from public.uk_bank_holidays where region = 'england_wales' and holiday_date = '2026-04-06')
+                     and not exists (select 1 from public.uk_bank_holidays where region = 'scotland' and holiday_date = '2026-04-06')
+                     and exists (select 1 from public.uk_bank_holidays where region = 'scotland' and holiday_date = '2026-01-02'),
+                     'the Scottish and English lists differ where the law differs (summer, Easter Monday, 2nd January)');
+select pg_temp.check((select bank_holiday_region from public.notification_settings) = 'scotland', 'quiet hours use the Scottish bank holidays by default');
+
+-- The database-to-function call is not reachable by signed-in users.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000f1';
+select pg_temp.check(pg_temp.denied($q$select private.call_notify_function('{}'::jsonb)$q$),
+                     'signed-in users cannot call the notifier');
+reset role;
 reset role;
 \o
 \echo ALL RLS TESTS PASSED

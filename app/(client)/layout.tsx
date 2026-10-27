@@ -5,6 +5,7 @@ const NAV = [
   { href: "/", label: "Things to do" },
   { href: "/documents", label: "Documents" },
   { href: "/messages", label: "Messages" },
+  { href: "/account", label: "Account" },
 ];
 
 export default function ClientLayout({ children }: { children: React.ReactNode }) {

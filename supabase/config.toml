@@ -444,8 +444,15 @@ verify_jwt = false
 enabled = true
 verify_jwt = false
 
+[functions.send-notifications]
+enabled = true
+verify_jwt = false
+
 # LOCAL ONLY. The mock scanner treats the standard EICAR test string as a virus so tests can exercise that path.
 # (It refuses to run on the hosted project; hosted functions read their own secrets.)
 [edge_runtime.secrets]
 SCANNER_PROVIDER = "mock"
 SCAN_WEBHOOK_SECRET = "local-development-only-scan-secret"
+NOTIFY_WEBHOOK_SECRET = "local-development-only-notify-secret"
+# Local emails are returned to the test instead of being sent. (Refused on the hosted project.)
+NOTIFY_TRANSPORT = "capture"
