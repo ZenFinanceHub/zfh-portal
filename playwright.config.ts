@@ -4,6 +4,7 @@ import { defineConfig, devices } from "@playwright/test";
 // which is the site URL local Supabase allows magic-link redirects to.
 export default defineConfig({
   testDir: "./tests/e2e",
+  globalSetup: "./tests/e2e/global-setup.ts",
   workers: 1,
   retries: 0,
   reporter: "list",

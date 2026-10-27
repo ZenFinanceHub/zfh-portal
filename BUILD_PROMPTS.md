@@ -107,7 +107,7 @@ Build the client side, mobile-first, plain English (see CLAUDE.md product rules)
   "Your account owner needs to approve this")
 - Consent request: shows the exact wording (versioned constants in lib/consents.ts), checkbox + confirm
   → record_consent with that wording
-- After every submit: a clear "Received — nothing more needed" confirmation
+- After every submit: a clear "Received — thank you" confirmation that says how many things are left (or "That's everything for now")
 - /documents: files shared with the client (clean only), download via 60s signed URL + log_event
 Test at 375px. No session timeouts for clients.
 ```
