@@ -63,6 +63,7 @@ server; every call runs as that staff member (no service role), so row-level sec
   to stop the connector itself, disable the OAuth server in Supabase (Authentication → OAuth Server).
 
 Set-up in Supabase (Authentication): *OAuth Server* on, Authorization Path `/oauth/consent`, dynamic registration **off**; then
-*OAuth Apps → Add a new client* named Claude, confidential, redirect URIs `https://claude.ai/api/mcp/auth_callback` and
+*OAuth Apps → Add a new client* named Claude, confidential, **token endpoint authentication method `client_secret_post`** (claude.ai sends the
+secret in the request body; with the default `client_secret_basic` the token exchange fails and claude.ai only says "Authorization failed"), redirect URIs `https://claude.ai/api/mcp/auth_callback` and
 `https://claude.com/api/mcp/auth_callback`. The client secret is shown once; paste it straight into claude.ai (Settings →
 Connectors → Add custom connector → Advanced settings) and don't store it anywhere else.
