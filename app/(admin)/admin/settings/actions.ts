@@ -78,3 +78,18 @@ export async function removeBankHoliday(region: string, date: string): Promise<v
   await supabase.from("uk_bank_holidays").delete().eq("region", region).eq("holiday_date", date);
   revalidatePath("/admin/settings");
 }
+
+// ── Connected apps ───────────────────────────────────────────
+// Admin only (the database checks). The grant stops working at once; for the admin's own connection the Supabase
+// consent and tokens are ended through Supabase's own call too.
+export async function revokeConnectorGrant(grantId: string): Promise<void> {
+  if (!z.uuid().safeParse(grantId).success) return;
+  const supabase = await createClient();
+  const { data: grant } = await supabase.from("connector_grants").select("user_id, client_id").eq("id", grantId).maybeSingle();
+  const { error } = await supabase.rpc("connector_revoke_grant", { p_grant_id: grantId });
+  if (!error && grant) {
+    const { data } = await supabase.auth.getUser();
+    if (data.user?.id === grant.user_id) await supabase.auth.oauth.revokeGrant({ clientId: grant.client_id });
+  }
+  revalidatePath("/admin/settings");
+}

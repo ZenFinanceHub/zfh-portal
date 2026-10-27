@@ -367,7 +367,7 @@ enabled = false
 # OAuth server configuration
 [auth.oauth_server]
 # Enable OAuth server functionality
-enabled = false
+enabled = true
 # Path for OAuth consent flow UI
 authorization_url_path = "/oauth/consent"
 # Allow dynamic client registration
@@ -448,11 +448,6 @@ verify_jwt = false
 enabled = true
 verify_jwt = false
 
-# LOCAL ONLY. The mock scanner treats the standard EICAR test string as a virus so tests can exercise that path.
-# (It refuses to run on the hosted project; hosted functions read their own secrets.)
-[edge_runtime.secrets]
-SCANNER_PROVIDER = "mock"
-SCAN_WEBHOOK_SECRET = "local-development-only-scan-secret"
-NOTIFY_WEBHOOK_SECRET = "local-development-only-notify-secret"
-# Local emails are returned to the test instead of being sent. (Refused on the hosted project.)
-NOTIFY_TRANSPORT = "capture"
+# Local edge function settings live in supabase/functions/.env (not committed; see .env.example beside it).
+# They must NOT be [edge_runtime.secrets] here: the CLI copies that table to the live project when functions are deployed,
+# which once put test values (a mock scanner, a capture-only mailer, a published webhook secret) on production.

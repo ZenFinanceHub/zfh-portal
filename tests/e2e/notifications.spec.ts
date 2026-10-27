@@ -513,6 +513,37 @@ test("clients get one 'You have something to do' per job per batch, only people 
   expect(mine(w, await notify(at(TUE, "12:10")))).toEqual([]);
 });
 
+test("returning a request emails 'You have something to do', bundled with new ones, and never says why", async () => {
+  const w = await world();
+  const REASON = "The RETURN-REASON-987 figure looks wrong";
+  // Rows are stamped by the database, so the clock is moved forward from now rather than set to a fixed time.
+  const later = (minutes: number) => new Date(Date.now() + minutes * 60_000).toISOString();
+
+  const returned = await addRequest(w.jobId, { kind: "upload" });
+  await admin.from("requests").update({ status: "submitted" }).eq("id", returned);
+  await admin.from("notifications_queue").delete().eq("job_id", w.jobId);
+  const fresh = await addRequest(w.jobId, { kind: "question", question_type: "text" }, true);
+
+  // Staff return it: the trigger queues a client event next to the new request's.
+  const { error } = await admin.from("requests").update({ status: "returned", return_reason: REASON }).eq("id", returned);
+  expect(error).toBeNull();
+  const { data: rows } = await admin.from("notifications_queue").select("*").eq("job_id", w.jobId);
+  expect(rows).toHaveLength(2);
+  expect(JSON.stringify(rows)).not.toContain("RETURN-REASON");
+  expect(rows!.map((r) => r.request_id).sort()).toEqual([returned, fresh].sort());
+
+  expect(mine(w, await notify(later(9)))).toEqual([]); // inside the 10-minute bundle
+  const sent = mine(w, await notify(later(11)));
+  expect(to(sent, w.ownerEmail)).toHaveLength(1); // one email for both, not one each
+  expect(to(sent, w.contributorEmail)).toHaveLength(1);
+  for (const m of sent) {
+    expect(m.subject).toBe("You have something to do");
+    expect(m.html).not.toContain("RETURN-REASON");
+    expect(m.html).not.toContain("figure looks wrong");
+  }
+  expect(mine(w, await notify(later(30)))).toEqual([]); // never twice
+});
+
 test("a message from staff sends one 'You have a new message', bundled over 10 minutes, to people on the job", async () => {
   const w = await world();
   await queue(w, { event: "staff_message", at: at(TUE, "10:00") });

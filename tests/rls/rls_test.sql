@@ -556,16 +556,26 @@ insert into public.templates (id, name, service, requests) values
   ('dddddddd-0000-0000-0000-000000000001', 'RLS finance fixture template', 'finance_application',
    '[{"kind":"upload","title":"Bank statements","due_offset_days":7}]'::jsonb);
 
--- Everything that exists right now, so "admin sees everything" does not assume an empty database.
-create temp table pg_temp.areatotals as
-  select (select count(*) from public.clients)        as clients,
-         (select count(*) from public.jobs)           as jobs,
-         (select count(*) from public.requests)       as requests,
-         (select count(*) from public.responses)      as responses,
-         (select count(*) from public.files)          as files,
-         (select count(*) from public.messages)       as messages,
-         (select count(*) from public.consents)       as consents,
-         (select count(*) from storage.objects)       as objects;
+-- What exists for this test's own fixture clients, counted as superuser here and again as the admin below. Only
+-- fixture rows are counted, so real or leftover rows (a live database, tombstoned files) cannot affect the result.
+create or replace function pg_temp.fixture_counts() returns text language sql as $$
+  with c as (
+    select id from public.clients
+     where id::text ~ '^(aaaaaaaa|bbbbbbbb|cccccccc|a3a3a3a3|f3f3f3f3|a4a4a4a4)-0000-0000-0000-000000000000$'
+  )
+  select concat_ws(',',
+    (select count(*) from c),
+    (select count(*) from public.jobs      where client_id in (select id from c)),
+    (select count(*) from public.requests  q join public.jobs j on j.id = q.job_id where j.client_id in (select id from c)),
+    (select count(*) from public.responses r join public.requests q on q.id = r.request_id
+                                             join public.jobs j on j.id = q.job_id where j.client_id in (select id from c)),
+    (select count(*) from public.files     where client_id in (select id from c)),
+    (select count(*) from public.messages  m join public.jobs j on j.id = m.job_id where j.client_id in (select id from c)),
+    (select count(*) from public.consents  where client_id in (select id from c)),
+    (select count(*) from storage.objects  o where split_part(o.name, '/', 1) in (select id::text from c))
+  )
+$$;
+create temp table pg_temp.areatotals as select pg_temp.fixture_counts() as counts;
 grant select on pg_temp.areatotals to authenticated;
 
 -- helpers: run a statement as the current role and report what happened
@@ -593,16 +603,8 @@ set role authenticated;
 
 -- Admin sees everything, in both areas.
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
-select pg_temp.check(
-  (select count(*) from public.jobs)      = (select jobs      from pg_temp.areatotals)
-  and (select count(*) from public.clients)   = (select clients   from pg_temp.areatotals)
-  and (select count(*) from public.requests)  = (select requests  from pg_temp.areatotals)
-  and (select count(*) from public.responses) = (select responses from pg_temp.areatotals)
-  and (select count(*) from public.files)     = (select files     from pg_temp.areatotals)
-  and (select count(*) from public.messages)  = (select messages  from pg_temp.areatotals)
-  and (select count(*) from public.consents)  = (select consents  from pg_temp.areatotals)
-  and (select count(*) from storage.objects)  = (select objects   from pg_temp.areatotals),
-  'admin sees everything, in both areas');
+select pg_temp.check(pg_temp.fixture_counts() = (select counts from pg_temp.areatotals),
+                     'admin sees everything, in both areas');
 select pg_temp.check(pg_temp.seen('f2f2f2f2-0000-0000-0000-000000000001') = '1,1,1,1,2,1,1'
                      and pg_temp.seen('a1a1a1a1-0000-0000-0000-000000000001') = '1,1,1,1,2,1,1',
                      'admin sees every part of both a finance job and an accounting job');
@@ -1124,6 +1126,345 @@ set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000f1';
 select pg_temp.check(pg_temp.denied($q$select private.call_notify_function('{}'::jsonb)$q$),
                      'signed-in users cannot call the notifier');
 reset role;
+
+-- Returning a request tells the client the same thing as a new one, and never carries the reason.
+insert into public.requests (id, job_id, kind, title)
+values ('a7a7a7a7-1111-6666-0000-000000000008', 'a7a7a7a7-1111-0000-0000-000000000001', 'upload', 'Notify return');
+delete from public.notifications_queue where request_id = 'a7a7a7a7-1111-6666-0000-000000000008';
+update public.requests set status = 'submitted' where id = 'a7a7a7a7-1111-6666-0000-000000000008';
+delete from public.notifications_queue where request_id = 'a7a7a7a7-1111-6666-0000-000000000008';
+update public.requests set status = 'returned', return_reason = 'Reason that must stay private'
+ where id = 'a7a7a7a7-1111-6666-0000-000000000008';
+select pg_temp.check((select count(*) from public.notifications_queue
+                       where request_id = 'a7a7a7a7-1111-6666-0000-000000000008'
+                         and audience = 'client' and event = 'request_created' and state = 'pending') = 1
+                     and (select count(*) from public.notifications_queue
+                           where request_id = 'a7a7a7a7-1111-6666-0000-000000000008' and audience = 'staff') = 0
+                     and not exists (select 1 from public.notifications_queue q
+                                      where q.request_id = 'a7a7a7a7-1111-6666-0000-000000000008'
+                                        and q::text ilike '%private%'),
+                     'returning a request queues one client notification and keeps the reason out of it');
+delete from public.notifications_queue where request_id = 'a7a7a7a7-1111-6666-0000-000000000008';
+-- ═════════════════════════════════════════════════════════════
+-- Claude connector (0008): MFA grants, no direct table access, minimal data, nothing written without confirm
+-- ═════════════════════════════════════════════════════════════
+reset role;
+select set_config('request.jwt.claims', '', false);
+insert into auth.oauth_clients (id, registration_type, redirect_uris, grant_types, client_name, token_endpoint_auth_method)
+values ('c0c0c0c0-0000-0000-0000-000000000001', 'manual', 'https://claude.ai/api/mcp/auth_callback',
+        'authorization_code,refresh_token', 'Claude (test)', 'client_secret_basic');
+insert into auth.mfa_factors (id, user_id, factor_type, status, created_at, updated_at)
+select gen_random_uuid(), u, 'totp', 'verified', now(), now()
+  from unnest(array['00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-0000000000d1',
+                    '00000000-0000-0000-0000-0000000000d2']::uuid[]) u;
+update public.profiles set staff_areas = array['accounting'] where id = '00000000-0000-0000-0000-0000000000d1';
+update public.profiles set staff_areas = array['finance']    where id = '00000000-0000-0000-0000-0000000000d2';
+
+-- Things the connector must never reveal: staff help text, a return reason, a client's answer, a client's message.
+insert into public.requests (id, job_id, kind, title, help_text, status, return_reason, due_date) values
+  ('c0c0c0c0-1111-0000-0000-000000000001', 'a1a1a1a1-0000-0000-0000-000000000001', 'upload', 'Connector visible title',
+   'HELP-SECRET-TEXT', 'returned', 'RETURN-SECRET-REASON', current_date + 3);
+insert into public.responses (request_id, author_id, answer)
+values ('c0c0c0c0-1111-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000e1', '{"value":"ANSWER-SECRET-VALUE"}');
+insert into public.messages (job_id, author_id, body, internal)
+values ('a1a1a1a1-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000e1', 'CLIENT-SECRET-MESSAGE', false);
+delete from public.notifications_queue where client_id = 'a3a3a3a3-0000-0000-0000-000000000000';
+
+create or replace function pg_temp.token(uid uuid, client uuid default null, aal text default 'aal1') returns void
+language plpgsql as $$
+begin
+  perform set_config('request.jwt.claim.sub', uid::text, false);
+  perform set_config('request.jwt.claims',
+    jsonb_build_object('sub', uid, 'role', 'authenticated', 'aal', aal, 'client_id', client)::text, false);
+end $$;
+create or replace function pg_temp.fails(sql text) returns boolean language plpgsql as $$
+begin execute sql; return false;
+exception when others then return true; end $$;
+create or replace function pg_temp.denied_with(sql text, msg text) returns boolean language plpgsql as $$
+begin execute sql; return false;
+exception when others then return sqlerrm = msg; end $$;
+
+-- Row counts that must not move when a write tool is previewed.
+create or replace function pg_temp.writes() returns text language sql security definer as $$
+  select concat_ws(',', (select count(*) from public.jobs), (select count(*) from public.requests),
+                   (select count(*) from public.messages), (select count(*) from public.audit_log),
+                   (select count(*) from public.notifications_queue))
+$$;
+
+\set claude '''c0c0c0c0-0000-0000-0000-000000000001'''
+\set adminid '''00000000-0000-0000-0000-00000000000a'''
+\set accid '''00000000-0000-0000-0000-0000000000d1'''
+\set finid '''00000000-0000-0000-0000-0000000000d2'''
+\set ownerid '''00000000-0000-0000-0000-0000000000e1'''
+
+-- ── Grants can only come from an ordinary staff session at aal2 ──
+set role authenticated;
+select pg_temp.token(:adminid, null, 'aal1');
+select pg_temp.check(pg_temp.fails($q$select public.connector_record_grant('c0c0c0c0-0000-0000-0000-000000000001')$q$),
+                     'staff who have not entered an authenticator code cannot create a connector grant');
+select pg_temp.token(:ownerid, null, 'aal2');
+select pg_temp.check(pg_temp.fails($q$select public.connector_record_grant('c0c0c0c0-0000-0000-0000-000000000001')$q$),
+                     'a client account cannot create a connector grant, even with an authenticator code');
+select pg_temp.token(:adminid, :claude, 'aal2');
+select pg_temp.check(pg_temp.fails($q$select public.connector_record_grant('c0c0c0c0-0000-0000-0000-000000000001')$q$),
+                     'a connector token cannot create its own grant');
+select pg_temp.token(:adminid, null, 'aal2');
+select pg_temp.check(pg_temp.denied_with($q$select public.connector_record_grant('c0c0c0c0-0000-0000-0000-0000000000ff')$q$, 'Unknown app'),
+                     'a grant needs a real OAuth app');
+select pg_temp.check(pg_temp.fails($q$insert into public.connector_grants (user_id, client_id)
+                       values ('00000000-0000-0000-0000-00000000000a', 'c0c0c0c0-0000-0000-0000-000000000001')$q$),
+                     'nobody can write grants directly');
+
+select pg_temp.token(:adminid, null, 'aal2');
+select pg_temp.check(public.connector_authorization_client('no-such-authorization') is null,
+                     'asking which app an unknown authorisation belongs to returns nothing');
+select pg_temp.token(:ownerid, null, 'aal2');
+select pg_temp.check(pg_temp.denied($q$select public.connector_authorization_client('x')$q$),
+                     'a client account cannot ask which app an authorisation belongs to');
+
+-- ── No grant: every tool refuses ──
+select pg_temp.token(:adminid, :claude, 'aal1');
+select pg_temp.check(public.connector_check() = 'no_grant', 'a connector token with no grant is refused');
+select pg_temp.check(pg_temp.denied_with($q$select public.connector_search_clients('Alpha')$q$, 'connector_no_grant')
+                     and pg_temp.denied_with($q$select public.connector_list_jobs('a3a3a3a3-0000-0000-0000-000000000000')$q$, 'connector_no_grant')
+                     and pg_temp.denied_with($q$select public.connector_outstanding('a3a3a3a3-0000-0000-0000-000000000000')$q$, 'connector_no_grant')
+                     and pg_temp.denied_with($q$select public.connector_add_note('a1a1a1a1-0000-0000-0000-000000000001', 'x', true)$q$, 'connector_no_grant'),
+                     'without a grant, no connector tool works, reads or writes');
+-- An ordinary (non connector) sign-in is not a connector either.
+select pg_temp.token(:adminid, null, 'aal2');
+select pg_temp.check(public.connector_check() = 'not_connector'
+                     and pg_temp.fails($q$select public.connector_search_clients('Alpha')$q$),
+                     'connector tools only work for connector tokens');
+
+-- ── Grants made the proper way ──
+select public.connector_record_grant('c0c0c0c0-0000-0000-0000-000000000001');
+select pg_temp.token(:accid, null, 'aal2');
+select public.connector_record_grant('c0c0c0c0-0000-0000-0000-000000000001');
+select pg_temp.token(:finid, null, 'aal2');
+select public.connector_record_grant('c0c0c0c0-0000-0000-0000-000000000001');
+select pg_temp.check((select count(*) from public.connector_grants) = 1, 'staff see only their own connector grant');
+select pg_temp.token(:adminid, null, 'aal2');
+select pg_temp.check((select count(*) from public.connector_grants) = 3, 'the admin sees every connector grant');
+
+-- ── A connector token cannot touch tables or files directly ──
+select pg_temp.token(:adminid, :claude, 'aal1');
+select pg_temp.check(public.connector_check() = 'ok', 'a fresh grant plus a verified authenticator lets the connector in');
+select pg_temp.check((select count(*) from public.clients) = 0 and (select count(*) from public.jobs) = 0
+                     and (select count(*) from public.requests) = 0 and (select count(*) from public.responses) = 0
+                     and (select count(*) from public.messages) = 0 and (select count(*) from public.files) = 0
+                     and (select count(*) from public.consents) = 0 and (select count(*) from public.profiles) = 0
+                     and (select count(*) from public.audit_log) = 0 and (select count(*) from storage.objects) = 0,
+                     'a connector token sees no rows in any table and no stored files, even for the admin');
+select pg_temp.check(pg_temp.fails($q$insert into public.requests (job_id, kind, title) values ('a1a1a1a1-0000-0000-0000-000000000001', 'upload', 'sneaky')$q$)
+                     and pg_temp.changed($q$update public.requests set title = 'changed' where id = 'c0c0c0c0-1111-0000-0000-000000000001'$q$) = 0
+                     and pg_temp.fails($q$insert into public.messages (job_id, body, internal) values ('a1a1a1a1-0000-0000-0000-000000000001', 'sneaky', false)$q$)
+                     and pg_temp.fails($q$insert into public.audit_log (action, entity) values ('x', 'y')$q$),
+                     'a connector token cannot write to any table directly');
+-- The API gate (PostgREST runs it before every request): connector tokens may only call connector_* functions.
+select set_config('request.path', '/rpc/create_job_from_template', false);
+select pg_temp.check(pg_temp.denied_with($q$select public.connector_gate()$q$, 'Connector tokens can only use the connector tools'),
+                     'the API gate refuses a connector token on the portal''s other functions');
+select set_config('request.path', '/clients', false);
+select pg_temp.check(pg_temp.denied_with($q$select public.connector_gate()$q$, 'Connector tokens can only use the connector tools'),
+                     'the API gate refuses a connector token on tables');
+select set_config('request.path', '/rpc/connector_add_requests', false);
+select pg_temp.check(not pg_temp.fails($q$select public.connector_gate()$q$), 'the API gate lets a connector token call connector tools');
+select pg_temp.token(:adminid, null, 'aal2');
+select set_config('request.path', '/rpc/create_job_from_template', false);
+select pg_temp.check(not pg_temp.fails($q$select public.connector_gate()$q$), 'the API gate does not affect ordinary sign-ins');
+select set_config('request.path', '', false);
+select pg_temp.token(:adminid, :claude, 'aal1');
+
+-- ── What the tools return: names, titles, statuses, due dates ──
+select pg_temp.check(public.connector_search_clients('mixed') -> 0 ->> 'name' = 'Mixed Ltd'
+                     and (select array_agg(k order by k) from jsonb_object_keys(public.connector_search_clients('mixed') -> 0) k) = array['client_id', 'name'],
+                     'search returns client ids and names only');
+select pg_temp.check((select array_agg(k order by k) from jsonb_object_keys(public.connector_list_jobs('a3a3a3a3-0000-0000-0000-000000000000') -> 0) k)
+                       = array['area', 'due_date', 'finance_stage', 'job_id', 'service', 'stage', 'title'],
+                     'listing jobs returns titles, service, area, stage and due date only');
+select pg_temp.check((select array_agg(k order by k) from jsonb_object_keys(public.connector_outstanding('a3a3a3a3-0000-0000-0000-000000000000') -> 0) k)
+                       = array['area', 'client', 'due_date', 'job', 'job_id', 'kind', 'overdue', 'request_id', 'status', 'title'],
+                     'outstanding items return titles, kind, status and due date only');
+select pg_temp.check(public.connector_outstanding('a3a3a3a3-0000-0000-0000-000000000000')::text like '%Connector visible title%'
+                     and public.connector_outstanding('a3a3a3a3-0000-0000-0000-000000000000')::text not like '%SECRET%'
+                     and public.connector_list_jobs('a3a3a3a3-0000-0000-0000-000000000000')::text not like '%SECRET%'
+                     and public.connector_search_clients('mixed')::text not like '%SECRET%'
+                     and public.connector_outstanding(null, 'a1a1a1a1-0000-0000-0000-000000000001')::text not like '%SECRET%',
+                     'help text, return reasons, answers and client messages never appear in a read tool');
+select pg_temp.check(pg_temp.fails($q$select public.connector_outstanding('a3a3a3a3-0000-0000-0000-000000000000', 'a1a1a1a1-0000-0000-0000-000000000001')$q$)
+                     and pg_temp.fails($q$select public.connector_outstanding()$q$),
+                     'outstanding needs exactly one of a client or a job');
+
+-- ── No write happens without confirm ──
+create temp table pg_temp.before_writes as select pg_temp.writes() as w;
+grant select on pg_temp.before_writes to authenticated;
+select public.connector_create_job('a3a3a3a3-0000-0000-0000-000000000000', null, 'bookkeeping', 'Preview only job');
+select public.connector_add_requests('a1a1a1a1-0000-0000-0000-000000000001',
+  '[{"kind":"upload","title":"Bank statements","due_date":"2030-01-31"},{"kind":"question","title":"Any new loans?","question_type":"yes_no"}]'::jsonb,
+  'Lender wants: ten pages of PRIVATE-LENDER-WORDS');
+select public.connector_send_message('a1a1a1a1-0000-0000-0000-000000000001', 'Preview message');
+select public.connector_add_note('a1a1a1a1-0000-0000-0000-000000000001', 'Preview note', false);
+select pg_temp.check(pg_temp.writes() = (select w from pg_temp.before_writes),
+                     'without confirm, no tool changes anything (no job, request, message, audit row or email queued)');
+select pg_temp.check((public.connector_add_requests('a1a1a1a1-0000-0000-0000-000000000001',
+        '[{"kind":"upload","title":"Bank statements"}]'::jsonb) ->> 'preview')::boolean
+                     and (public.connector_send_message('a1a1a1a1-0000-0000-0000-000000000001', 'hi') ->> 'changes_nothing')::boolean,
+                     'a write tool called without confirm says it is only a preview');
+select pg_temp.check(pg_temp.fails($q$select public.connector_add_requests('a1a1a1a1-0000-0000-0000-000000000001', '[{"kind":"consent","title":"x"}]'::jsonb)$q$)
+                     and pg_temp.fails($q$select public.connector_add_requests('a1a1a1a1-0000-0000-0000-000000000001', '[{"kind":"question","title":"x"}]'::jsonb)$q$)
+                     and pg_temp.fails($q$select public.connector_add_requests('a1a1a1a1-0000-0000-0000-000000000001', '[]'::jsonb)$q$),
+                     'requests are checked in the preview too: no consents, questions need a type, at least one request');
+
+-- ── With confirm: requests, notes and messages happen, audited as the connector ──
+select pg_temp.token(:adminid, :claude, 'aal1');
+select public.connector_add_requests('a1a1a1a1-0000-0000-0000-000000000001',
+  '[{"kind":"upload","title":"Bank statements","due_date":"2030-01-31"},{"kind":"question","title":"Any new loans?","question_type":"yes_no"}]'::jsonb,
+  'Lender wants: ten pages of PRIVATE-LENDER-WORDS', true);
+reset role;
+select pg_temp.check((select count(*) from public.requests where job_id = 'a1a1a1a1-0000-0000-0000-000000000001'
+                        and title in ('Bank statements', 'Any new loans?')) >= 2
+                     and (select count(*) from public.messages where job_id = 'a1a1a1a1-0000-0000-0000-000000000001'
+                           and internal and body like '%PRIVATE-LENDER-WORDS%') = 1,
+                     'confirmed requests are created and the lender text is kept as an internal note');
+select pg_temp.check((select count(*) from public.audit_log where meta ->> 'source' = 'claude_connector'
+                        and actor_id = '00000000-0000-0000-0000-00000000000a' and action = 'insert' and entity = 'requests') = 2
+                     and (select count(*) from public.audit_log where action = 'connector_requests_added'
+                           and actor_id = '00000000-0000-0000-0000-00000000000a' and meta ->> 'source' = 'claude_connector') = 1,
+                     'connector changes are audited with the staff member and source claude_connector');
+select pg_temp.check((select count(*) from public.notifications_queue
+                       where client_id = 'a3a3a3a3-0000-0000-0000-000000000000' and audience = 'client' and event = 'request_created') = 2
+                     and (select count(*) from public.notifications_queue
+                           where client_id = 'a3a3a3a3-0000-0000-0000-000000000000' and audience = 'staff') = 0,
+                     'new requests from the connector trigger the normal client email, and nothing for staff');
+-- a long pasted text is kept whole, in order
+set role authenticated;
+select pg_temp.token(:adminid, :claude, 'aal1');
+select public.connector_add_requests('a1a1a1a1-0000-0000-0000-000000000001',
+  '[{"kind":"upload","title":"Long text job"}]'::jsonb, repeat('0123456789', 700), true);
+reset role;
+select pg_temp.check((select count(*) from public.messages where job_id = 'a1a1a1a1-0000-0000-0000-000000000001' and internal
+                        and body ~ '^(Lender request list, as received:
+
+)?0123456789' and char_length(body) <= 5000) = 2
+                     and (select sum(char_length(regexp_replace(body, '[^0-9]', '', 'g'))) from public.messages
+                           where job_id = 'a1a1a1a1-0000-0000-0000-000000000001' and internal
+                             and body ~ '^(Lender request list, as received:
+
+)?0123456789') = 7000,
+                     'a long lender text is kept whole, split into internal notes under the 5,000 limit');
+
+set role authenticated;
+select pg_temp.token(:adminid, :claude, 'aal1');
+select public.connector_send_message('a1a1a1a1-0000-0000-0000-000000000001', 'Hello from the connector', true);
+select public.connector_add_note('a1a1a1a1-0000-0000-0000-000000000001', 'Private note', true);
+reset role;
+select pg_temp.check((select internal from public.messages where body = 'Hello from the connector') = false
+                     and (select internal from public.messages where body = 'Private note') = true
+                     and (select count(*) from public.notifications_queue
+                           where audience = 'client' and event = 'staff_message' and client_id = 'a3a3a3a3-0000-0000-0000-000000000000') = 1,
+                     'a confirmed message reaches the client (one email queued); a note stays internal and queues nothing');
+
+-- ── Area rules still apply through the connector ──
+set role authenticated;
+select pg_temp.token(:accid, :claude, 'aal1');
+select pg_temp.check(public.connector_check() = 'ok', 'accounting staff can use the connector');
+select pg_temp.check(pg_temp.denied_with($q$select public.connector_add_requests('f2f2f2f2-0000-0000-0000-000000000001', '[{"kind":"upload","title":"Sneaky finance request"}]'::jsonb, null, true)$q$, 'Job not found')
+                     and pg_temp.denied_with($q$select public.connector_add_requests('f2f2f2f2-0000-0000-0000-000000000001', '[{"kind":"upload","title":"Sneaky finance request"}]'::jsonb)$q$, 'Job not found')
+                     and pg_temp.denied_with($q$select public.connector_send_message('f2f2f2f2-0000-0000-0000-000000000001', 'x', true)$q$, 'Job not found')
+                     and pg_temp.denied_with($q$select public.connector_add_note('f2f2f2f2-0000-0000-0000-000000000001', 'x', true)$q$, 'Job not found')
+                     and pg_temp.denied_with($q$select public.connector_create_job('a3a3a3a3-0000-0000-0000-000000000000', 'RLS finance fixture template', null, 'Sneaky finance job', true)$q$, 'Not allowed'),
+                     'accounting-only staff cannot add finance requests, messages, notes or jobs through the connector');
+select pg_temp.check(public.connector_outstanding('a3a3a3a3-0000-0000-0000-000000000000')::text not like '%Mixed finance application%'
+                     and public.connector_list_jobs('a3a3a3a3-0000-0000-0000-000000000000')::text not like '%Mixed finance application%',
+                     'accounting-only staff do not see finance jobs through the connector');
+select pg_temp.token(:finid, :claude, 'aal1');
+select pg_temp.check(pg_temp.fails($q$select public.connector_add_requests('a1a1a1a1-0000-0000-0000-000000000001', '[{"kind":"upload","title":"x"}]'::jsonb, null, true)$q$),
+                     'finance-only staff cannot add accounting requests through the connector');
+select pg_temp.token(:adminid, :claude, 'aal1');
+select pg_temp.check((public.connector_create_job('a3a3a3a3-0000-0000-0000-000000000000', 'RLS finance fixture template', null, 'Preview finance job') ->> 'preview')::boolean
+                     and (public.connector_create_job('a3a3a3a3-0000-0000-0000-000000000000', null, 'year_end', 'Preview year end') -> 'would_create' ->> 'service') = 'year_end',
+                     'creating a job previews the template that would be used, by name or by service');
+select public.connector_create_job('a3a3a3a3-0000-0000-0000-000000000000', null, 'year_end', 'Connector made job', true);
+reset role;
+select pg_temp.check((select count(*) from public.jobs where title = 'Connector made job') = 1
+                     and (select count(*) from public.audit_log where action = 'connector_job_created' and meta ->> 'source' = 'claude_connector') = 1,
+                     'a confirmed job is created and audited');
+
+-- ── Client accounts, staff without an authenticator ──
+set role authenticated;
+select pg_temp.token(:ownerid, :claude, 'aal1');
+select pg_temp.check(public.connector_check() = 'not_staff'
+                     and pg_temp.denied_with($q$select public.connector_search_clients('Alpha')$q$, 'connector_not_staff')
+                     and pg_temp.fails($q$select public.connector_outstanding('a3a3a3a3-0000-0000-0000-000000000000')$q$),
+                     'a client account cannot use the connector');
+reset role;
+delete from auth.mfa_factors where user_id = '00000000-0000-0000-0000-0000000000d2';
+set role authenticated;
+select pg_temp.token(:finid, :claude, 'aal1');
+select pg_temp.check(public.connector_check() = 'no_authenticator'
+                     and pg_temp.denied_with($q$select public.connector_search_clients('Alpha')$q$, 'connector_no_authenticator'),
+                     'staff without a verified authenticator cannot use the connector');
+
+-- ── Grants expire after 7 days and can be revoked ──
+reset role;
+update public.connector_grants set approved_at = now() - interval '6 days 23 hours'
+ where user_id = '00000000-0000-0000-0000-0000000000d1';
+set role authenticated;
+select pg_temp.token(:accid, :claude, 'aal1');
+select pg_temp.check(public.connector_check() = 'ok', 'a grant 6 days 23 hours old still works');
+reset role;
+update public.connector_grants set approved_at = now() - interval '7 days 1 hour'
+ where user_id = '00000000-0000-0000-0000-0000000000d1';
+set role authenticated;
+select pg_temp.token(:accid, :claude, 'aal1');
+select pg_temp.check(public.connector_check() = 'expired'
+                     and pg_temp.denied_with($q$select public.connector_search_clients('Alpha')$q$, 'connector_expired')
+                     and pg_temp.denied_with($q$select public.connector_add_note('a1a1a1a1-0000-0000-0000-000000000001', 'x', true)$q$, 'connector_expired')
+                     and pg_temp.denied_with($q$select public.connector_outstanding('a3a3a3a3-0000-0000-0000-000000000000')$q$, 'connector_expired'),
+                     'an expired grant is refused by every tool');
+select pg_temp.check(pg_temp.fails($q$select public.connector_revoke_grant((select id from public.connector_grants limit 1))$q$),
+                     'only the admin can revoke a grant');
+-- approving again with an authenticator renews it
+select pg_temp.token(:accid, null, 'aal2');
+select public.connector_record_grant('c0c0c0c0-0000-0000-0000-000000000001');
+select pg_temp.token(:accid, :claude, 'aal1');
+select pg_temp.check(public.connector_check() = 'ok', 'approving again with an authenticator code renews the grant');
+
+select pg_temp.token(:adminid, :claude, 'aal2');
+select pg_temp.check(pg_temp.fails($q$select public.connector_revoke_grant((select id from public.connector_grants where user_id = '00000000-0000-0000-0000-0000000000d1'))$q$),
+                     'a connector token cannot revoke grants');
+select pg_temp.token(:adminid, null, 'aal2');
+select public.connector_revoke_grant((select id from public.connector_grants where user_id = '00000000-0000-0000-0000-0000000000d1'));
+select pg_temp.token(:accid, :claude, 'aal1');
+select pg_temp.check(public.connector_check() = 'revoked' and pg_temp.denied_with($q$select public.connector_search_clients('Alpha')$q$, 'connector_revoked'),
+                     'a revoked grant stops the connector at once');
+reset role;
+select pg_temp.check((select count(*) from public.audit_log where action = 'connector_revoked'
+                        and actor_id = '00000000-0000-0000-0000-00000000000a') = 1
+                     and (select count(*) from public.audit_log where action = 'connector_approved') = 4,
+                     'approving and revoking connector access are audited');
+
+-- ── Every table refuses connector tokens (guards against a future table missing the policy) ──
+select pg_temp.check(not exists (
+    select 1 from pg_tables t
+     where t.schemaname = 'public'
+       and not exists (select 1 from pg_policies p where p.schemaname = 'public' and p.tablename = t.tablename
+                        and p.policyname = 'no_connector_tokens' and p.permissive = 'RESTRICTIVE'))
+  and exists (select 1 from pg_policies p where p.schemaname = 'storage' and p.tablename = 'objects'
+               and p.policyname = 'no_connector_tokens' and p.permissive = 'RESTRICTIVE'),
+  'every table and the file store refuse connector tokens');
+select set_config('request.jwt.claims', '', false);
+
+-- The API gate must be switched on: a platform update that resets role settings would silently turn it off.
+reset role;
+select pg_temp.check(exists (
+    select 1 from pg_db_role_setting s join pg_roles r on r.oid = s.setrole, unnest(s.setconfig) as setting
+     where r.rolname = 'authenticator' and setting = 'pgrst.db_pre_request=public.connector_gate'),
+  'the API gate (pgrst.db_pre_request) is set on the authenticator role');
+select pg_temp.check(has_function_privilege('anon', 'public.connector_gate()', 'execute')
+                     and has_function_privilege('authenticated', 'public.connector_gate()', 'execute')
+                     and has_function_privilege('service_role', 'public.connector_gate()', 'execute'),
+  'every API role can run the API gate (otherwise every request would fail)');
 reset role;
 \o
 \echo ALL RLS TESTS PASSED

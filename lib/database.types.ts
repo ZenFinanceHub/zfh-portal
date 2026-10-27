@@ -83,6 +83,32 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"connector_grants": {
+                  Row: {
+                    "approved_at": string,"client_id": string,"id": string,"revoked_at": string | null,"revoked_by": string | null,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "approved_at"?: string,"client_id": string,"id"?: string,"revoked_at"?: string | null,"revoked_by"?: string | null,"user_id": string
+                  }
+                  Update: {
+                    "approved_at"?: string,"client_id"?: string,"id"?: string,"revoked_at"?: string | null,"revoked_by"?: string | null,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "connector_grants_revoked_by_fkey"
+      columns: ["revoked_by"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "connector_grants_user_id_fkey"
+      columns: ["user_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"consents": {
                   Row: {
                     "client_id": string,"consent_type": string,"created_at": string,"id": string,"ip": string | null,"job_id": string | null,"profile_id": string,"recipient": string | null,"request_id": string | null,"user_agent": string | null,"wording_text": string,"wording_version": string
@@ -456,6 +482,45 @@ isOneToOne: false
                            },
 "compute_file_retention":
 { Args: { "p_client_id": string,"p_created": string,"p_job_id": string }; Returns: string
+                           },
+"connector_add_note":
+{ Args: { "p_body": string,"p_confirm"?: boolean,"p_job_id": string }; Returns: Json
+                           },
+"connector_add_requests":
+{ Args: { "p_confirm"?: boolean,"p_job_id": string,"p_lender_text"?: string,"p_requests": Json }; Returns: Json
+                           },
+"connector_authorization_client":
+{ Args: { "p_authorization_id": string }; Returns: string
+                           },
+"connector_check":
+{ Args: Record<PropertyKey, never>; Returns: string
+                           },
+"connector_create_job":
+{ Args: { "p_client_id": string,"p_confirm"?: boolean,"p_service": string,"p_template": string,"p_title": string }; Returns: Json
+                           },
+"connector_expire":
+{ Args: Record<PropertyKey, never>; Returns: undefined
+                           },
+"connector_gate":
+{ Args: Record<PropertyKey, never>; Returns: undefined
+                           },
+"connector_list_jobs":
+{ Args: { "p_client_id": string,"p_open_only"?: boolean }; Returns: Json
+                           },
+"connector_outstanding":
+{ Args: { "p_client_id"?: string,"p_job_id"?: string }; Returns: Json
+                           },
+"connector_record_grant":
+{ Args: { "p_client_id": string }; Returns: undefined
+                           },
+"connector_revoke_grant":
+{ Args: { "p_grant_id": string }; Returns: undefined
+                           },
+"connector_search_clients":
+{ Args: { "p_query": string }; Returns: Json
+                           },
+"connector_send_message":
+{ Args: { "p_body": string,"p_confirm"?: boolean,"p_job_id": string }; Returns: Json
                            },
 "create_job_from_template":
 { Args: { "p_assigned_to": string,"p_client_id": string,"p_contributors"?: (string)[],"p_due_date": string,"p_period_end": string,"p_service": string,"p_template_id": string,"p_title": string }; Returns: string

@@ -16,6 +16,7 @@
     "seed:local": "node scripts/seed-local-users.mjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.118.0",
     "next": "16.4.3",

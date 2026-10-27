@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ConnectedApps } from "./connected-apps";
 import { NotificationSettings } from "./notifications";
 import { StaffRow } from "./staff-row";
 import { cardClass } from "@/components/ui/styles";
@@ -9,6 +10,7 @@ import { createClient } from "@/lib/supabase/server";
 const TABS = [
   { id: "staff", label: "Staff" },
   { id: "notifications", label: "Notifications" },
+  { id: "connected", label: "Connected apps" },
 ] as const;
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
@@ -26,7 +28,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   }
 
   const { tab: requested } = await searchParams;
-  const tab = requested === "notifications" ? "notifications" : "staff";
+  const tab = requested === "notifications" || requested === "connected" ? requested : "staff";
 
   return (
     <>
@@ -46,7 +48,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         ))}
       </nav>
 
-      {tab === "notifications" ? <NotificationSettings /> : <StaffTab />}
+      {tab === "notifications" ? <NotificationSettings /> : tab === "connected" ? <ConnectedApps /> : <StaffTab />}
     </>
   );
 }
