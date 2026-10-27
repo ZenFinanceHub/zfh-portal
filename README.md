@@ -29,6 +29,13 @@ live project whenever functions are deployed. Local-only values (mock scanner, c
 live in `supabase/functions/.env` (not committed; copy `supabase/functions/.env.example`). After any `functions deploy`, check
 `npx supabase secrets list --project-ref vvxrqwcmyisiweecqgyn` shows no `NOTIFY_TRANSPORT` or `SCANNER_PROVIDER=mock`.
 
+### Deploy checklist
+
+After deploying functions (`npx supabase functions deploy <name>`), **always run `npx supabase secrets list --project-ref vvxrqwcmyisiweecqgyn`**.
+It lists names and SHA-256 digests (never values). There must be no `NOTIFY_TRANSPORT`, no `SCANNER_PROVIDER=mock`, and no digest matching a
+value in `supabase/functions/.env` (hash each local value with SHA-256 and compare). Then check one sweep returns 200: from the SQL editor run
+`select private.call_notify_function('{"mode":"sweep"}'::jsonb);` and read the newest row of `net._http_response`.
+
 ## Notifications
 
 Emails are decided by `send-notifications` using the rules in `notification_settings` and `uk_bank_holidays`, which the admin edits at
