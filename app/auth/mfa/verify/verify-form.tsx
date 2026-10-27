@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { verifyAuthenticatorCode } from "@/app/auth/mfa/actions";
 import { inputClass, primaryButtonClass } from "@/components/ui/styles";
 import { totpCodeSchema } from "@/lib/validation/auth";
 
@@ -20,13 +20,10 @@ export function VerifyForm({ factorId }: { factorId: string }) {
     }
     setBusy(true);
     setError(null);
-    const { error } = await createClient().auth.mfa.challengeAndVerify({
-      factorId,
-      code: parsed.data,
-    });
-    if (error) {
+    const result = await verifyAuthenticatorCode(factorId, parsed.data);
+    if (!result.ok) {
       setBusy(false);
-      setError("That code isn't right. Check the latest code in your app and try again.");
+      setError(result.error);
       return;
     }
     router.replace("/admin");

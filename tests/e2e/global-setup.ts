@@ -11,4 +11,8 @@ export default async function globalSetup() {
     .like("email", "e2e.%@example.com")
     .eq("is_staff", true);
   if (error) throw new Error(`Could not tidy earlier test staff: ${error.message}`);
+
+  // Sign-in and code attempts are counted per hour; start each run with clean counters so earlier runs can't block this one.
+  const cleared = await admin.from("rate_limits").delete().neq("scope", "");
+  if (cleared.error) throw new Error(`Could not reset the rate limit counters: ${cleared.error.message}`);
 }

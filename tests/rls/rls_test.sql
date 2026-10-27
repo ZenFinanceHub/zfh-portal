@@ -1465,6 +1465,193 @@ select pg_temp.check(has_function_privilege('anon', 'public.connector_gate()', '
                      and has_function_privilege('authenticated', 'public.connector_gate()', 'execute')
                      and has_function_privilege('service_role', 'public.connector_gate()', 'execute'),
   'every API role can run the API gate (otherwise every request would fail)');
+-- ═════════════════════════════════════════════════════════════
+-- Audit viewer, rate limits and function coverage (0009)
+-- ═════════════════════════════════════════════════════════════
+reset role;
+select set_config('request.jwt.claims', '', false);
+delete from public.rate_limits;
+create or replace function pg_temp.link(email text, ip text default '10.0.0.1') returns boolean language sql as $$
+  select (public.rate_limit_magic_link(email, ip) ->> 'allowed')::boolean
+$$;
+
+-- ── Rate limit counters: closed to everyone but the functions ──
+set role anon;
+select set_config('request.jwt.claim.sub', '', false);
+select pg_temp.check(pg_temp.denied($q$select count(*) from public.rate_limits$q$)
+                     and pg_temp.denied($q$insert into public.rate_limits (scope, key_hash, window_start, hits) values ('x', 'y', now(), 1)$q$),
+                     'nobody can read or write the rate limit counters directly');
+set role authenticated;
+select pg_temp.token(:adminid, null, 'aal2');
+select pg_temp.check(pg_temp.denied($q$select count(*) from public.rate_limits$q$)
+                     and pg_temp.denied($q$delete from public.rate_limits$q$),
+                     'signed-in users, even the admin, cannot read or reset the counters');
+
+-- ── Sign-in links: 5 per 15 minutes per email, 20 an hour per IP, same answer whether or not the email exists ──
+set role anon;
+select set_config('request.jwt.claims', '', false);
+select set_config('request.jwt.claim.sub', '', false);
+select pg_temp.check((select bool_and(pg_temp.link('Someone@Example.com', '10.1.1.' || n)) from generate_series(1, 5) n),
+                     'five sign-in links every 15 minutes are allowed for one email address');
+select pg_temp.check(not pg_temp.link('someone@example.com', '10.1.1.9')
+                     and not pg_temp.link(' SOMEONE@example.com ', '10.1.1.10'),
+                     'the sixth is refused, whatever the capitals or spaces');
+select pg_temp.check(pg_temp.link('someone.else@example.com', '10.1.1.11'), 'another email address is not affected');
+select pg_temp.check((public.rate_limit_magic_link('someone@example.com', '10.1.1.12') ->> 'retry_after')::int between 1 and 900,
+                     'a refusal for an email address says how long to wait, never more than 15 minutes');
+reset role;
+select pg_temp.check((select window_start + interval '15 minutes' >= now() and window_start <= now() from public.rate_limits
+                       where scope = 'magic_link_email' order by window_start desc limit 1)
+                     and (select count(distinct window_start) from public.rate_limits where scope = 'magic_link_ip') >= 1
+                     and (select max(window_start) - min(window_start) from public.rate_limits where scope = 'magic_link_email') < interval '15 minutes',
+                     'email counters use 15-minute windows');
+set role anon;
+select pg_temp.check((select bool_and(pg_temp.link('ip.user.' || n || '@example.com', '192.168.5.5')) from generate_series(1, 20) n)
+                     and not pg_temp.link('ip.user.21@example.com', '192.168.5.5')
+                     and pg_temp.link('ip.user.22@example.com', '192.168.5.6'),
+                     'twenty an hour are allowed from one IP address, the next is refused, another IP is not affected');
+select pg_temp.check(not pg_temp.link('', '10.0.0.1') and not pg_temp.link(repeat('a', 300) || '@example.com', '10.0.0.1')
+                     and not pg_temp.link('ok@example.com', repeat('1', 100)),
+                     'empty or oversized input is refused');
+reset role;
+select pg_temp.check(not exists (select 1 from public.rate_limits where key_hash ~* 'example|10\.|192\.|@')
+                     and (select bool_and(key_hash ~ '^[0-9a-f]{64}$') from public.rate_limits),
+                     'the counters hold only hashes: no email address or IP address is stored');
+
+-- ── Authenticator code attempts: 10 per 15 minutes per person ──
+set role authenticated;
+select pg_temp.token(:accid, null, 'aal1');
+select pg_temp.check((select bool_and((public.rate_limit_mfa() ->> 'allowed')::boolean) from generate_series(1, 10)),
+                     'ten authenticator code attempts are allowed');
+select pg_temp.check(not (public.rate_limit_mfa() ->> 'allowed')::boolean, 'the eleventh is refused');
+select pg_temp.token(:finid, null, 'aal1');
+select pg_temp.check((public.rate_limit_mfa() ->> 'allowed')::boolean, 'another person is not affected');
+select pg_temp.token(:finid, :claude, 'aal1');
+select pg_temp.check(pg_temp.denied($q$select public.rate_limit_mfa()$q$), 'a connector token cannot use the sign-in counter');
+set role anon;
+select pg_temp.check(pg_temp.denied($q$select public.rate_limit_mfa()$q$), 'anonymous callers cannot use the sign-in counter');
+
+-- ── The connector: 120 calls a minute per person and app ──
+set role authenticated;
+select pg_temp.token(:adminid, :claude, 'aal1');
+select pg_temp.check((select bool_and((public.connector_rate_limit() ->> 'allowed')::boolean) from generate_series(1, 120)),
+                     'the connector allows 120 calls a minute');
+select pg_temp.check(not (public.connector_rate_limit() ->> 'allowed')::boolean, 'the 121st is refused');
+select pg_temp.token(:accid, :claude, 'aal1');
+select pg_temp.check((public.connector_rate_limit() ->> 'allowed')::boolean, 'another person is not affected');
+select pg_temp.token(:adminid, null, 'aal2');
+select pg_temp.check(pg_temp.denied($q$select public.connector_rate_limit()$q$), 'only connector tokens use the connector counter');
+
+-- ── The audit viewer ──
+reset role;
+insert into public.audit_log (actor_id, action, entity, entity_id, client_id, meta, created_at) values
+  ('00000000-0000-0000-0000-00000000000a', 'job_zip_download', 'jobs', 'a1a1a1a1-0000-0000-0000-000000000001',
+   'a3a3a3a3-0000-0000-0000-000000000000', '{}', '2031-03-10 10:00+00'),
+  ('00000000-0000-0000-0000-0000000000d2', 'lender_pack_download', 'jobs', 'f2f2f2f2-0000-0000-0000-000000000001',
+   'a3a3a3a3-0000-0000-0000-000000000000', '{}', '2031-03-11 10:00+00'),
+  ('00000000-0000-0000-0000-0000000000d2', 'login', 'profiles', '00000000-0000-0000-0000-0000000000d2', null, '{}', '2031-03-12 10:00+00');
+set role authenticated;
+select pg_temp.token(:adminid, null, 'aal2');
+select pg_temp.check((select count(*) from public.admin_audit(p_from := '2031-03-10', p_to := '2031-03-12')) = 3
+                     and (select count(*) from public.admin_audit(p_from := '2031-03-11', p_to := '2031-03-11')) = 1
+                     and (select count(*) from public.admin_audit(p_from := '2031-03-13')) = 0,
+                     'the audit viewer filters by date range (whole London days)');
+select pg_temp.check((select count(*) from public.admin_audit(p_actor := '00000000-0000-0000-0000-0000000000d2', p_from := '2031-03-10')) = 2
+                     and (select count(*) from public.admin_audit(p_action := 'job_zip_download', p_from := '2031-03-10')) = 1
+                     and (select count(*) from public.admin_audit(p_client := 'a3a3a3a3-0000-0000-0000-000000000000', p_from := '2031-03-10')) = 2,
+                     'the audit viewer filters by staff member, action and client');
+select pg_temp.check((select count(*) from public.admin_audit(p_area := 'finance', p_from := '2031-03-10')) = 1
+                     and (select count(*) from public.admin_audit(p_area := 'accounting', p_from := '2031-03-10')) = 1
+                     and (select area from public.admin_audit(p_action := 'lender_pack_download', p_from := '2031-03-10')) = 'finance',
+                     'the audit viewer filters by area, worked out from the job');
+select pg_temp.check((select actor_name from public.admin_audit(p_action := 'login', p_from := '2031-03-10')) is not null
+                     and (select client_name from public.admin_audit(p_action := 'job_zip_download', p_from := '2031-03-10')) = 'Mixed Ltd'
+                     and (select max(total) from public.admin_audit(p_from := '2031-03-10')) = 3
+                     and (select count(*) from public.admin_audit(p_from := '2031-03-10', p_limit := 2)) = 2
+                     and (select count(*) from public.admin_audit(p_from := '2031-03-10', p_limit := 2, p_offset := 2)) = 1,
+                     'the audit viewer gives names, a total and pages');
+select pg_temp.check(pg_temp.denied_with($q$select * from public.admin_audit(p_area := 'sales')$q$, 'Unknown area'),
+                     'an unknown area is refused');
+select pg_temp.check(not exists (select 1 from public.admin_audit(p_from := '2031-03-10') a
+                                  where a.meta::text ~* 'answer|body|original_name|password'),
+                     'the audit viewer never carries answers, file names or message text');
+
+-- Everyone else is refused
+select pg_temp.token(:accid, null, 'aal2');
+select pg_temp.check(pg_temp.denied($q$select * from public.admin_client_audit('a3a3a3a3-0000-0000-0000-000000000000')$q$),
+                     'staff who are not the admin cannot read a client''s audit trail');
+select pg_temp.token(:adminid, null, 'aal2');
+select pg_temp.check((select count(*) from public.admin_client_audit('a3a3a3a3-0000-0000-0000-000000000000')) >=
+                       (select count(*) from public.audit_log where client_id = 'a3a3a3a3-0000-0000-0000-000000000000')
+                     and exists (select 1 from public.admin_client_audit('a3a3a3a3-0000-0000-0000-000000000000') where entity = 'requests')
+                     and not exists (select 1 from public.admin_client_audit('a3a3a3a3-0000-0000-0000-000000000000')
+                                      where client_id is not null and client_id <> 'a3a3a3a3-0000-0000-0000-000000000000'),
+                     'the admin gets a client''s whole audit trail, including entries that only carry a job or request id, and nobody else''s');
+select pg_temp.token(:adminid, :claude, 'aal1');
+select pg_temp.check(pg_temp.denied($q$select * from public.admin_client_audit('a3a3a3a3-0000-0000-0000-000000000000')$q$),
+                     'a connector token cannot read a client''s audit trail');
+select pg_temp.token(:accid, null, 'aal2');
+select pg_temp.check(pg_temp.denied($q$select * from public.admin_audit()$q$) and pg_temp.denied($q$select public.log_audit_export(1, '{}')$q$),
+                     'staff who are not the admin cannot use the audit viewer or log an export');
+select pg_temp.token(:ownerid, null, 'aal2');
+select pg_temp.check(pg_temp.denied($q$select * from public.admin_audit()$q$), 'client accounts cannot use the audit viewer');
+select pg_temp.token(:adminid, :claude, 'aal1');
+select pg_temp.check(pg_temp.denied($q$select * from public.admin_audit()$q$) and pg_temp.denied($q$select public.log_audit_export(1, '{}')$q$),
+                     'a connector token cannot use the audit viewer, even the admin''s');
+set role anon;
+select pg_temp.check(pg_temp.denied($q$select * from public.admin_audit()$q$), 'anonymous callers cannot use the audit viewer');
+
+set role authenticated;
+select pg_temp.token(:adminid, null, 'aal2');
+select public.log_audit_export(3, '{"action":"login"}'::jsonb);
+reset role;
+select pg_temp.check((select count(*) from public.audit_log where action = 'audit_export'
+                       and actor_id = '00000000-0000-0000-0000-00000000000a' and (meta ->> 'rows')::int = 3) = 1,
+                     'a CSV export is recorded in the audit log');
+
+-- Security review: the "documents ready" check does not answer for requests the caller cannot see
+set role authenticated;
+select pg_temp.token('00000000-0000-0000-0000-0000000000e1', null, 'aal1');
+select pg_temp.check(public.attached_documents_ready('a1a1a1a1-1111-0000-0000-000000000001'), 'the owner can ask about their own request');
+select pg_temp.token('00000000-0000-0000-0000-0000000000b1', null, 'aal1');
+select pg_temp.check(not public.attached_documents_ready('a1a1a1a1-1111-0000-0000-000000000001'),
+                     'another client learns nothing about someone else''s request');
+select pg_temp.token(:finid, null, 'aal2');
+select pg_temp.check(not public.attached_documents_ready('a1a1a1a1-1111-0000-0000-000000000001'),
+                     'staff outside the area learn nothing about the request either');
+reset role;
+
+-- ── Coverage of every table and function ──
+select pg_temp.check(not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+                                  where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity),
+                     'row-level security is on for every table');
+select pg_temp.check(not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                                  where n.nspname in ('public', 'private') and p.prosecdef
+                                    and not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) c where c like 'search_path=%')),
+                     'every security-definer function pins its search_path');
+select pg_temp.check((select array_agg(p.proname::text order by p.proname) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                       where n.nspname = 'public' and p.prokind = 'f' and has_function_privilege('anon', p.oid, 'execute'))
+                     = array['connector_gate', 'rate_limit_magic_link', 'request_ip', 'request_user_agent', 'touch_updated_at'],
+                     'anonymous callers can run exactly these functions and no others');
+-- A new function that signed-in users can run must be added here on purpose, after someone has checked what it lets them do.
+select pg_temp.check((select array_agg(p.proname::text order by p.proname) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                       where n.nspname = 'public' and p.prokind = 'f' and has_function_privilege('authenticated', p.oid, 'execute'))
+                     = array['add_pending_request', 'admin_audit', 'admin_client_audit', 'area_of_service', 'attached_documents_ready', 'can_access_client',
+                             'can_access_job', 'connector_add_note', 'connector_add_requests', 'connector_authorization_client',
+                             'connector_check', 'connector_create_job', 'connector_expire', 'connector_gate', 'connector_list_jobs',
+                             'connector_outstanding', 'connector_rate_limit', 'connector_record_grant', 'connector_revoke_grant',
+                             'connector_search_clients', 'connector_send_message', 'create_job_from_template', 'discard_failed_upload',
+                             'is_admin', 'is_client_owner', 'is_staff', 'log_audit_export', 'log_event', 'rate_limit_magic_link',
+                             'rate_limit_mfa', 'record_consent', 'request_ip', 'request_user_agent', 'set_staff_areas',
+                             'staff_can_access_area', 'staff_can_access_client', 'staff_can_access_job', 'staff_can_access_optional_job',
+                             'staff_has_any_area', 'submit_request', 'touch_updated_at'],
+                     'signed-in users can run exactly the reviewed list of functions');
+select pg_temp.check(not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                                  where n.nspname = 'private' and p.prokind = 'f'
+                                    and p.proname not in ('token_client', 'connector_status')
+                                    and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('authenticated', p.oid, 'execute'))),
+                     'the private functions cannot be run by anyone signed in, apart from the two the policies use');
+select set_config('request.jwt.claims', '', false);
 reset role;
 \o
 \echo ALL RLS TESTS PASSED

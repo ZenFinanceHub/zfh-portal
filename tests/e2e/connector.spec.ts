@@ -398,3 +398,31 @@ test("renewing needs the authenticator step whether or not Supabase remembers th
   const t2 = await exchange(first.app, new URL(page.url()).searchParams.get("code")!, b.verifier);
   expect((await tool(t2.access, "search_clients", { query: f.clientName.slice(0, 14) })).status).toBe(200);
 });
+
+test("the connector is limited to 120 calls a minute per person, with a Retry-After", async ({ page }) => {
+  test.setTimeout(120_000);
+  const f = await fixtures();
+  const { access } = await connect(page, `e2e.connector.rate.${f.tag}@example.com`);
+  await admin.from("rate_limits").delete().eq("scope", "connector");
+
+  const statuses: number[] = [];
+  let retryAfter: string | null = null;
+  for (let batch = 0; batch < 14; batch++) {
+    const results = await Promise.all(
+      Array.from({ length: 10 }, async () => {
+        const r = await mcp(access, "tools/list");
+        if (r.status === 429) retryAfter = r.headers.get("retry-after");
+        return r.status;
+      }),
+    );
+    statuses.push(...results);
+  }
+  expect(statuses.filter((s) => s === 200).length).toBeGreaterThanOrEqual(100);
+  expect(statuses.filter((s) => s === 200).length).toBeLessThanOrEqual(121);
+  expect(statuses.filter((s) => s === 429).length).toBeGreaterThan(0);
+  expect(Number(retryAfter)).toBeGreaterThan(0);
+
+  // And it recovers once the counters reset
+  await admin.from("rate_limits").delete().eq("scope", "connector");
+  expect((await mcp(access, "tools/list")).status).toBe(200);
+});

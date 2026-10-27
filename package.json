@@ -13,6 +13,7 @@
     "supabase": "supabase",
     "test:rls:remote": "node scripts/test-rls.mjs --remote",
     "test:e2e": "playwright test",
+    "test:e2e:low": "playwright test --workers=1",
     "seed:local": "node scripts/seed-local-users.mjs"
   },
   "dependencies": {
@@ -32,6 +33,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.3",
+    "fflate": "^0.8.2",
     "supabase": "^2.122.0",
     "tailwindcss": "^4",
     "typescript": "^5"

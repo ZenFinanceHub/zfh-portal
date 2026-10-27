@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { bearerToken, forbidden, unauthorised } from "@/lib/connector/http";
 import { buildServer } from "@/lib/connector/tools";
+import { asLimited } from "@/lib/rate-limit";
 import type { Database } from "@/lib/database.types";
 
 // The Claude connector: a remote MCP server (streamable HTTP, no sessions). Claude signs the staff member in through
@@ -48,6 +49,16 @@ async function handle(req: Request) {
       return forbidden("The connector is for ZenFinanceHub staff with an authenticator set up.");
     }
     return unauthorised(origin, "Approve access again in the portal to continue.");
+  }
+
+  // 120 calls a minute per person and app, counted in the database.
+  const { data: limit } = await db.rpc("connector_rate_limit");
+  const limited = asLimited(limit);
+  if (limited && !limited.allowed) {
+    return Response.json(
+      { error: "rate_limited", error_description: "Too many requests. Please slow down." },
+      { status: 429, headers: { "retry-after": String(limited.retry_after), "cache-control": "no-store" } },
+    );
   }
 
   const server = buildServer(db);

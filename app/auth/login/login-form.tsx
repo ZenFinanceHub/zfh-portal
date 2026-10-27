@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { requestSignInLink, type LoginState } from "@/app/auth/actions";
 import { inputClass, primaryButtonClass } from "@/components/ui/styles";
+import { waitPhrase } from "@/lib/rate-limit";
 
 const initial: LoginState = { sent: false };
 
@@ -40,6 +41,11 @@ export function LoginForm() {
           </p>
         ) : null}
       </div>
+      {state.limited ? (
+        <p role="alert" className="text-danger" data-testid="login-limited">
+          Too many sign-in requests. Please wait {waitPhrase(state.wait ?? 3600)} and try again.
+        </p>
+      ) : null}
       <button type="submit" disabled={pending} className={primaryButtonClass}>
         {pending ? "Sending…" : "Email me a sign-in link"}
       </button>

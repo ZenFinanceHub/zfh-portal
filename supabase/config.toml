@@ -440,6 +440,10 @@ verify_jwt = false
 enabled = true
 verify_jwt = false
 
+[functions.client-export]
+enabled = true
+verify_jwt = false
+
 [functions.retention-delete]
 enabled = true
 verify_jwt = false

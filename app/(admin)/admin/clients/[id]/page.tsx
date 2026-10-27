@@ -11,6 +11,8 @@ import {
 } from "@/lib/labels";
 import { AREA_LABELS, isArea } from "@/lib/areas";
 import { createClient } from "@/lib/supabase/server";
+import { getMyAreas } from "@/lib/admin/areas";
+import { ExportClient } from "./export-client";
 import { InviteContact } from "./invite-contact";
 
 function Detail({ label, value }: { label: string; value: string | null | undefined }) {
@@ -27,6 +29,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
   if (!z.uuid().safeParse(id).success) notFound();
 
   const supabase = await createClient();
+  const { isAdmin } = await getMyAreas();
   const { data: client } = await supabase
     .from("clients")
     .select("*, assignee:profiles!clients_assigned_to_fkey(full_name, email)")
@@ -124,6 +127,8 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
           <p className="text-text-muted">No jobs yet.</p>
         )}
       </section>
+
+      {isAdmin ? <ExportClient clientId={id} /> : null}
     </div>
   );
 }

@@ -4,7 +4,7 @@
 //                       and only once a lender_share consent has been recorded for the job
 // The job and files are read as the caller (MFA + area rules apply). The service role is used only to read
 // the stored objects and to hold the temporary zip. Nothing personal goes in logs.
-import { Zip, ZipPassThrough } from "npm:fflate@0.8.2";
+import { Zip, ZipPassThrough } from "npm:fflate@0.8.3";
 import { z } from "npm:zod@4";
 import { authenticateStaff, CORS, json, serviceClient } from "../_shared/common.ts";
 

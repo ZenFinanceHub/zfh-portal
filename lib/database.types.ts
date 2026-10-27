@@ -373,6 +373,20 @@ isOneToOne: false
                   Relationships: [
                     
                   ]
+                },"rate_limits": {
+                  Row: {
+                    "hits": number,"key_hash": string,"scope": string,"window_start": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "hits"?: number,"key_hash": string,"scope": string,"window_start": string
+                  }
+                  Update: {
+                    "hits"?: number,"key_hash"?: string,"scope"?: string,"window_start"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
                 },"requests": {
                   Row: {
                     "consent_type": string | null,"created_at": string,"created_by": string | null,"due_date": string | null,"help_text": string | null,"id": string,"job_id": string,"kind": string,"options": Json | null,"question_type": string | null,"return_reason": string | null,"sort_order": number,"status": string,"submitted_at": string | null,"submitted_by": string | null,"title": string
@@ -468,6 +482,11 @@ isOneToOne: false
             "add_pending_request":
 { Args: { "p_due_date"?: string,"p_index": number,"p_job_id": string }; Returns: string
                            },
+"admin_audit":
+{ Args: { "p_action"?: string,"p_actor"?: string,"p_area"?: string,"p_client"?: string,"p_from"?: string,"p_limit"?: number,"p_offset"?: number,"p_to"?: string }; Returns: {
+              "action": string,"actor_id": string,"actor_name": string,"area": string,"client_id": string,"client_name": string,"created_at": string,"entity": string,"entity_id": string,"id": number,"ip": string,"meta": Json,"total": number
+            }[]
+                           },
 "area_of_service":
 { Args: { "p_service": string }; Returns: string
                            },
@@ -510,6 +529,9 @@ isOneToOne: false
 "connector_outstanding":
 { Args: { "p_client_id"?: string,"p_job_id"?: string }; Returns: Json
                            },
+"connector_rate_limit":
+{ Args: Record<PropertyKey, never>; Returns: Json
+                           },
 "connector_record_grant":
 { Args: { "p_client_id": string }; Returns: undefined
                            },
@@ -540,8 +562,17 @@ isOneToOne: false
 "is_staff":
 { Args: Record<PropertyKey, never>; Returns: boolean
                            },
+"log_audit_export":
+{ Args: { "p_filters": Json,"p_rows": number }; Returns: undefined
+                           },
 "log_event":
 { Args: { "p_action": string,"p_client_id"?: string,"p_entity": string,"p_entity_id": string }; Returns: undefined
+                           },
+"rate_limit_magic_link":
+{ Args: { "p_email": string,"p_ip": string }; Returns: Json
+                           },
+"rate_limit_mfa":
+{ Args: Record<PropertyKey, never>; Returns: Json
                            },
 "record_consent":
 { Args: { "p_recipient"?: string,"p_request_id": string,"p_wording_text": string,"p_wording_version": string }; Returns: string

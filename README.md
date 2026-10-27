@@ -67,3 +67,67 @@ Set-up in Supabase (Authentication): *OAuth Server* on, Authorization Path `/oau
 secret in the request body; with the default `client_secret_basic` the token exchange fails and claude.ai only says "Authorization failed"), redirect URIs `https://claude.ai/api/mcp/auth_callback` and
 `https://claude.com/api/mcp/auth_callback`. The client secret is shown once; paste it straight into claude.ai (Settings →
 Connectors → Add custom connector → Advanced settings) and don't store it anywhere else.
+
+## Audit log, exports and limits
+
+- **/admin/audit** (admin only): filter by client, team member, what happened, area and dates; plain-English wording; **Download as CSV**
+  (every export is itself recorded as "Exported the audit log"). The log holds ids, actions and counts, never answers, file names or message text.
+- **Subject access request:** on a client's page (admin only), *Export everything we hold* builds a zip: the records as JSON (client, contacts, jobs,
+  requests, answers, consents with their exact wording, messages **including internal notes**, the client's audit trail) plus every stored file that
+  passed its virus check. Files that failed or are still being checked are listed in `data/files.json` with the reason. Check staff notes before
+  sharing them: they can name other people or be exempt. Links last 60 seconds; the export is recorded as `client_export` first (no record, no download).
+  Limit: 400 MB of files per export (split into zips of about 50 MB).
+- **Rate limits** (counters in the `rate_limits` table, hashed, cleared after two days): 5 sign-in links every 15 minutes per email address and 20 an hour per IP address,
+  10 authenticator code attempts per 15 minutes per person, 120 connector calls a minute per person. Messages never say whether an email has an account.
+
+## Production checklist
+
+**Hosting and plans**
+- Vercel **Pro** (the free Hobby plan is not for commercial use), project `zfh-portal`, functions region `lhr1`, domain `portal.zenfinancehub.com`.
+  Vercel environment variables are exactly two: `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`. **Never add a service role key.**
+- Supabase **Pro**, project `vvxrqwcmyisiweecqgyn`, region London (eu-west-2).
+- Resend: domain `mail.zenfinancehub.com` verified (EU region); Supabase auth emails go out through Resend SMTP.
+
+**Backups**
+- Daily backups are on (check Dashboard → Database → Backups; or `npx supabase backups list --project-ref vvxrqwcmyisiweecqgyn`). Pro keeps 7 days.
+- **Point-in-time recovery is off.** It is an add-on: about $100 a month for 7 days, $200 for 14, $400 for 28, and it needs at least the Small compute size.
+  Turning it on replaces the daily backups.
+- **Backups do not include stored files.** Client documents in Storage are not in a database backup, and a restore will not bring back a file deleted since.
+  Keep that in mind before running retention deletes, and consider a periodic copy of the `client-files` bucket.
+
+**After every deploy**
+- Functions: run `npx supabase secrets list --project-ref vvxrqwcmyisiweecqgyn` (see *Deploy checklist* above) and one sweep check.
+- Database: `npx supabase db push --linked --dry-run` first, then the push, **then** the code. Run `npm run test:rls:remote` afterwards; it also checks the API gate
+  (`pgrst.db_pre_request`) is still set, which a platform update could reset.
+- Headers: `curl -sI https://portal.zenfinancehub.com/auth/login` shows the CSP (with a nonce), HSTS, `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`,
+  `Cross-Origin-Opener-Policy: same-origin` and `X-Content-Type-Options: nosniff`.
+- `npm audit` should say 0 vulnerabilities.
+
+**Add the first admin** (once): create the user in Supabase (Authentication → Users → Add user, confirm email), then in the SQL editor
+`update public.profiles set is_staff = true, staff_role = 'admin' where email = 'craig@zen-finance.co.uk';` The first sign-in asks them to set up an authenticator app.
+
+**Add a staff member**
+1. Supabase dashboard → Authentication → Users → *Invite user* (their email). Public sign-ups stay off.
+2. SQL editor: `update public.profiles set is_staff = true, staff_role = 'staff' where email = '…';`
+3. They open the invite link and set up an authenticator app (required for every staff page).
+4. Settings → Staff: tick their areas (Accounting, Business Finance). Until you do they see nothing. If they need the Claude connector, they connect it themselves.
+
+**Offboard a staff member** (do all four, in this order)
+1. Settings → Staff: untick every area (audited), and reassign any clients or jobs assigned to them.
+2. Settings → Connected apps: *Switch off* their Claude access.
+3. Supabase → Authentication → Users → the person → *Ban user* (this disables login; keep the account so the audit log still shows their name).
+   Then end any open sessions: SQL editor `delete from auth.sessions where user_id = (select id from auth.users where email = '…');`
+4. SQL editor: `update public.profiles set is_staff = false, staff_role = null, staff_areas = '{}' where email = '…';`
+
+**Incidents**
+- *A staff login may be stolen:* ban the user (as above) and delete their sessions; Settings → Connected apps → *Switch off*; read /admin/audit filtered to them.
+  Rotate anything they could have seen (below).
+- *The connector misbehaves:* Settings → Connected apps → *Switch off* (stops it at once). To stop everyone, turn off *OAuth Server* in Supabase (Authentication → OAuth Server).
+  If the API gate itself causes trouble: `alter role authenticator reset pgrst.db_pre_request; notify pgrst, 'reload config';` (then fix and re-set it).
+- *Rotate a function secret* (never paste values into chat or files): generate it, set it in the function, and put the same value in the database in one command, e.g. for the scan secret
+  `S=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")` then `npx supabase secrets set "SCAN_WEBHOOK_SECRET=$S" --project-ref vvxrqwcmyisiweecqgyn`
+  and `npx supabase db query --linked "update private.config set value = '$S' where key = 'scan_webhook_secret'"`; `unset S`. The notifier uses `NOTIFY_WEBHOOK_SECRET` / `notify_webhook_secret` the same way.
+  `RESEND_API_KEY`: create a new key in Resend, set it with `npx supabase secrets set RESEND_API_KEY=…` yourself, then delete the old key in Resend.
+  The Claude connector's client secret: Supabase → Authentication → OAuth Apps → Claude → regenerate, then paste the new one into claude.ai.
+- *Client account compromised:* ban the user in Supabase, delete their sessions, review /admin/audit for the client, and invite them again once safe.
+- *Personal data exposed:* note what and when from the audit log, and consider whether the ICO needs telling (72 hours).
