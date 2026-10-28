@@ -306,3 +306,67 @@ test("the admin exports everything held on a client; others cannot; the export i
   expect(logged).toEqual([{ actor_id: me!.id }]);
   void totp;
 });
+
+// ── Exports: audited only once they succeed, and clear errors when a download fails ──
+
+test("an export that fails is recorded as failed, not as done, and leaves no zip behind", async ({ page }) => {
+  const f = await fixture();
+  // A file the database says is clean, whose stored object is missing: the zip cannot be built
+  const id = crypto.randomUUID();
+  await admin.from("files").insert({
+    id, client_id: f.clientId, job_id: f.accJob, storage_path: `${f.clientId}/${f.accJob}/${id}-missing.pdf`, original_name: "missing.pdf",
+    mime_type: "application/pdf", size_bytes: 10, uploaded_by: f.ownerId, scan_status: "clean",
+  });
+  const adminEmail = `e2e.export.fail.${f.tag}@example.com`;
+  await signInAsStaffWithMfa(page, adminEmail);
+  const before = (await admin.storage.from("job-zips").list("")).data?.length ?? 0;
+
+  const res = await exportFor(await accessTokenOf(page), f.clientId);
+  expect(res.status).toBe(400);
+  expect((await res.json()).error).toBe("Something went wrong.");
+
+  const { data: rows } = await admin.from("audit_log").select("action").eq("client_id", f.clientId).in("action", ["client_export", "client_export_failed"]);
+  expect(rows!.map((r) => r.action)).toEqual(["client_export_failed"]);
+  expect(((await admin.storage.from("job-zips").list("")).data ?? []).length).toBe(before);
+});
+
+test("the export and CSV downloads work from the page, and a failed download says so", async ({ page }) => {
+  test.setTimeout(120_000);
+  const f = await fixture();
+  await signInAsStaffWithMfa(page, `e2e.export.ui.${f.tag}@example.com`);
+
+  // Client page: export, working
+  await page.goto(`/admin/clients/${f.clientId}`);
+  const [zip] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export everything we hold" }).click()]);
+  expect(zip.suggestedFilename()).toBe("client-export.zip");
+  await expect(page.getByTestId("export-client").getByRole("status")).toContainText("Your export is downloading");
+
+  // ...and when the file cannot be fetched
+  await page.route("**/storage/v1/object/sign/**", (route) => route.fulfill({ status: 503, body: "unavailable" }));
+  await page.getByRole("button", { name: "Export everything we hold" }).click();
+  await expect(page.getByTestId("export-client").getByRole("status")).toContainText("Sorry, that download didn't work — please try again.");
+  await expect(page.getByTestId("export-client")).not.toContainText("is downloading");
+  await page.unroute("**/storage/v1/object/sign/**");
+
+  // Audit page: CSV, working
+  await page.goto(`/admin/audit?client=${f.clientId}`);
+  const [csv] = await Promise.all([page.waitForEvent("download"), page.getByTestId("audit-export").click()]);
+  expect(csv.suggestedFilename()).toMatch(/^audit-log-\d{4}-\d{2}-\d{2}\.csv$/);
+
+  // ...and when the server fails
+  await page.route("**/admin/audit/export**", (route) => route.fulfill({ status: 503, body: "unavailable" }));
+  await page.getByTestId("audit-export").click();
+  await expect(page.getByTestId("audit-export-error")).toHaveText("Sorry, that download didn't work — please try again.");
+});
+
+test("the smoke-check function does a storage round trip with the shared secret and refuses everyone else", async () => {
+  const url = `${local.apiUrl}/functions/v1/smoke-check`;
+  const without = await fetch(url, { method: "POST", body: "{}" });
+  expect(without.status).toBe(401);
+  const wrong = await fetch(url, { method: "POST", headers: { "x-webhook-secret": "nope" }, body: "{}" });
+  expect(wrong.status).toBe(401);
+  const ok = await fetch(url, { method: "POST", headers: { "x-webhook-secret": "local-development-only-smoke-secret" }, body: "{}" });
+  expect(ok.status).toBe(200);
+  expect((await ok.json()).steps).toEqual({ upload: true, sign: true, download: true, identical: true, removed: true });
+  expect(((await admin.storage.from("job-zips").list("smoke")).data ?? []).length).toBe(0);
+});

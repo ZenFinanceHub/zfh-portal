@@ -1621,6 +1621,34 @@ select pg_temp.check(not public.attached_documents_ready('a1a1a1a1-1111-0000-000
                      'staff outside the area learn nothing about the request either');
 reset role;
 
+-- ── Exports are recorded as done or as failed, by the admin only (0010) ──
+set role authenticated;
+select pg_temp.token(:accid, null, 'aal2');
+select pg_temp.check(pg_temp.denied($q$select public.log_event('client_export', 'clients', 'a3a3a3a3-0000-0000-0000-000000000000', 'a3a3a3a3-0000-0000-0000-000000000000')$q$)
+                     and pg_temp.denied($q$select public.log_event('client_export_failed', 'clients', 'a3a3a3a3-0000-0000-0000-000000000000', 'a3a3a3a3-0000-0000-0000-000000000000')$q$)
+                     and pg_temp.denied($q$select public.log_audit_export_failed('{}')$q$),
+                     'staff who are not the admin cannot record exports, successful or failed');
+select pg_temp.token(:ownerid, null, 'aal2');
+select pg_temp.check(pg_temp.denied($q$select public.log_event('client_export', 'clients', 'a3a3a3a3-0000-0000-0000-000000000000', 'a3a3a3a3-0000-0000-0000-000000000000')$q$)
+                     and pg_temp.denied($q$select public.log_audit_export_failed('{}')$q$),
+                     'client accounts cannot record exports');
+select pg_temp.token(:adminid, :claude, 'aal1');
+select pg_temp.check(pg_temp.denied($q$select public.log_audit_export_failed('{}')$q$), 'a connector token cannot record exports');
+select pg_temp.token(:adminid, null, 'aal2');
+select public.log_event('client_export_failed', 'clients', 'a3a3a3a3-0000-0000-0000-000000000000', 'a3a3a3a3-0000-0000-0000-000000000000');
+select public.log_audit_export_failed('{"action":"login"}'::jsonb);
+select pg_temp.check(pg_temp.denied_with($q$select public.log_event('made_up_action', 'clients', null, null)$q$, 'Unknown action'),
+                     'only known actions can be recorded');
+reset role;
+select pg_temp.check((select count(*) from public.audit_log where action = 'client_export_failed'
+                       and actor_id = '00000000-0000-0000-0000-00000000000a'
+                       and client_id = 'a3a3a3a3-0000-0000-0000-000000000000') = 1
+                     and (select count(*) from public.audit_log where action = 'audit_export_failed'
+                           and actor_id = '00000000-0000-0000-0000-00000000000a') = 1
+                     and not exists (select 1 from public.audit_log where action in ('client_export_failed', 'audit_export_failed')
+                                       and meta::text ~* 'name|body|answer'),
+                     'a failed export is recorded with who and which client, never any content');
+
 -- ── Coverage of every table and function ──
 select pg_temp.check(not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
                                   where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity),
@@ -1641,7 +1669,7 @@ select pg_temp.check((select array_agg(p.proname::text order by p.proname) from 
                              'connector_check', 'connector_create_job', 'connector_expire', 'connector_gate', 'connector_list_jobs',
                              'connector_outstanding', 'connector_rate_limit', 'connector_record_grant', 'connector_revoke_grant',
                              'connector_search_clients', 'connector_send_message', 'create_job_from_template', 'discard_failed_upload',
-                             'is_admin', 'is_client_owner', 'is_staff', 'log_audit_export', 'log_event', 'rate_limit_magic_link',
+                             'is_admin', 'is_client_owner', 'is_staff', 'log_audit_export', 'log_audit_export_failed', 'log_event', 'rate_limit_magic_link',
                              'rate_limit_mfa', 'record_consent', 'request_ip', 'request_user_agent', 'set_staff_areas',
                              'staff_can_access_area', 'staff_can_access_client', 'staff_can_access_job', 'staff_can_access_optional_job',
                              'staff_has_any_area', 'submit_request', 'touch_updated_at'],

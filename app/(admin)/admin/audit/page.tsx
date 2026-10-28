@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DownloadCsv } from "./download-csv";
 import { cardClass, inputClass, primaryButtonInlineClass, secondaryButtonClass } from "@/components/ui/styles";
 import { getMyAreas } from "@/lib/admin/areas";
 import { ACTION_FILTERS, AREA_NAMES, describeAudit } from "@/lib/audit-labels";
@@ -80,9 +81,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
           <Link href="/admin/audit" className={secondaryButtonClass}>
             Clear
           </Link>
-          <a href={exportHref} className={secondaryButtonClass} data-testid="audit-export">
-            Download as CSV
-          </a>
+          <DownloadCsv href={exportHref} />
         </div>
       </form>
 

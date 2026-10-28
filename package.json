@@ -14,6 +14,7 @@
     "test:rls:remote": "node scripts/test-rls.mjs --remote",
     "test:e2e": "playwright test",
     "test:e2e:low": "playwright test --workers=1",
+    "smoke:live": "node scripts/smoke-live.mjs",
     "seed:local": "node scripts/seed-local-users.mjs"
   },
   "dependencies": {

@@ -5,6 +5,8 @@ import { useState } from "react";
 import { cardClass, secondaryButtonClass } from "@/components/ui/styles";
 import { createClient } from "@/lib/supabase/client";
 
+const DOWNLOAD_FAILED = "Sorry, that download didn't work — please try again.";
+
 async function friendlyError(error: unknown): Promise<string> {
   if (error instanceof FunctionsHttpError) {
     try {
@@ -32,12 +34,22 @@ export function ExportClient({ clientId }: { clientId: string }) {
       setMessage(await friendlyError(error));
       return;
     }
-    // Each link lasts 60 seconds, so they are all started straight away.
-    for (const url of urls) {
-      const link = new URL(url);
-      const anchor = document.createElement("a");
-      anchor.href = `${process.env.NEXT_PUBLIC_SUPABASE_URL}${link.pathname}${link.search}`;
-      anchor.click();
+    // Each link lasts 60 seconds, so the files are fetched straight away, in the page, so that a failure can be shown.
+    try {
+      for (const [index, url] of urls.entries()) {
+        const link = new URL(url);
+        const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}${link.pathname}${link.search}`);
+        if (!res.ok) throw new Error("download failed");
+        const objectUrl = URL.createObjectURL(await res.blob());
+        const anchor = document.createElement("a");
+        anchor.href = objectUrl;
+        anchor.download = urls.length === 1 ? "client-export.zip" : `client-export-part-${index + 1}-of-${urls.length}.zip`;
+        anchor.click();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 10_000);
+      }
+    } catch {
+      setMessage(DOWNLOAD_FAILED);
+      return;
     }
     setMessage(urls.length > 1 ? `Your export is in ${urls.length} zips. Allow multiple downloads if your browser asks.` : "Your export is downloading.");
   }

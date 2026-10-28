@@ -22,11 +22,20 @@ export async function GET(request: NextRequest) {
   const filters = parseAuditFilters(Object.fromEntries(request.nextUrl.searchParams));
   const supabase = await createClient();
 
+  const { page: _page, ...applied } = filters;
+  void _page;
+  const failed = async () => {
+    await supabase.rpc("log_audit_export_failed", { p_filters: applied });
+    return new NextResponse("Something went wrong.", { status: 500, headers: { "cache-control": "no-store" } });
+  };
+
   const lines = [["When", "Who", "What happened", "Client", "Area", "IP address"].map(cell).join(",")];
   let rowCount = 0;
   for (let offset = 0; offset < MAX_ROWS; offset += PAGE) {
     const { data, error } = await supabase.rpc("admin_audit", auditArgs(filters, PAGE, offset));
-    if (error) return new NextResponse("Not allowed.", { status: 403, headers: { "cache-control": "no-store" } });
+    // Not the admin: refused, and nothing is recorded. Any other problem is recorded as a failed export.
+    if (error?.code === "42501") return new NextResponse("Not allowed.", { status: 403, headers: { "cache-control": "no-store" } });
+    if (error) return failed();
     for (const r of data ?? []) {
       rowCount++;
       lines.push(
@@ -45,10 +54,9 @@ export async function GET(request: NextRequest) {
     if ((data?.length ?? 0) < PAGE) break;
   }
 
-  const { page: _page, ...applied } = filters;
-  void _page;
+  // Recorded only now that the file exists. If it cannot be recorded, nothing is handed over.
   const { error: logError } = await supabase.rpc("log_audit_export", { p_rows: rowCount, p_filters: applied });
-  if (logError) return new NextResponse("Something went wrong.", { status: 500, headers: { "cache-control": "no-store" } });
+  if (logError) return failed();
 
   const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date());
   return new NextResponse("﻿" + lines.join("\r\n") + "\r\n", {

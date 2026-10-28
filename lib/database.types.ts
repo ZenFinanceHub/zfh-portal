@@ -487,6 +487,24 @@ isOneToOne: false
               "action": string,"actor_id": string,"actor_name": string,"area": string,"client_id": string,"client_name": string,"created_at": string,"entity": string,"entity_id": string,"id": number,"ip": string,"meta": Json,"total": number
             }[]
                            },
+"admin_client_audit":
+{ Args: { "p_client": string }; Returns: {
+              "action": string,
+"actor_id": string | null,
+"client_id": string | null,
+"created_at": string,
+"entity": string,
+"entity_id": string | null,
+"id": number,
+"ip": string | null,
+"meta": NonNullable<Json>
+            }[]
+                          SetofOptions: {
+        from: "*"
+        to: "audit_log"
+        isOneToOne: false
+        isSetofReturn: true
+      } },
 "area_of_service":
 { Args: { "p_service": string }; Returns: string
                            },
@@ -564,6 +582,9 @@ isOneToOne: false
                            },
 "log_audit_export":
 { Args: { "p_filters": Json,"p_rows": number }; Returns: undefined
+                           },
+"log_audit_export_failed":
+{ Args: { "p_filters": Json }; Returns: undefined
                            },
 "log_event":
 { Args: { "p_action": string,"p_client_id"?: string,"p_entity": string,"p_entity_id": string }; Returns: undefined

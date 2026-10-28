@@ -1,7 +1,8 @@
 // Admin-only (and only after the authenticator code): a zip of everything held on one client, for a subject access
 // request. JSON for the records (client, contacts, jobs, requests, answers, consents with their exact wording, messages
 // and notes, the audit trail) plus every stored file that has passed its virus check. Returns 60-second download links
-// and records the export in the audit log first: no audit entry, no download.
+// and records the export in the audit log only once the zips exist and their links are issued (no audit entry, no
+// download). If anything fails after the admin has been checked, "client_export_failed" is recorded instead.
 // The records are read as the signed-in admin (row-level security applies). The service role is used only to read the
 // stored files and to hold the temporary zips. Nothing personal goes in logs.
 import { Zip, ZipPassThrough, strToU8, ZipDeflate } from "npm:fflate@0.8.3";
@@ -57,8 +58,23 @@ Deno.serve(async (req) => {
   const { data: client } = await db.from("clients").select("*").eq("id", clientId).maybeSingle();
   if (!client) return DENIED();
 
+  // From here on a failure is recorded as a failed export (who and which client; never any content).
+  const logFailure = async () => {
+    await db.rpc("log_event", { p_action: "client_export_failed", p_entity: "clients", p_entity_id: clientId, p_client_id: clientId });
+  };
+  const stored: string[] = []; // zips already uploaded; removed again if the export fails part-way
+  const fail = async (step: string) => {
+    if (stored.length) await admin.storage.from(ZIP_BUCKET).remove(stored);
+    await logFailure();
+    return FAILED(step);
+  };
+  const tooLarge = async () => {
+    await logFailure();
+    return json(413, { error: "This client's files are too large to export in one go." });
+  };
+
   const jobs = await all("jobs", (q) => q.eq("client_id", clientId));
-  if (!jobs) return FAILED("jobs");
+  if (!jobs) return await fail("jobs");
   const jobIds = jobs.map((j) => j.id as string);
   const inJobs = (q: any) => (jobIds.length ? q.in("job_id", jobIds) : q.eq("job_id", "00000000-0000-0000-0000-000000000000")); // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -70,11 +86,11 @@ Deno.serve(async (req) => {
     all("consents", (q) => q.eq("client_id", clientId)),
     all("files", (q) => q.eq("client_id", clientId)),
   ]);
-  if (!contacts || !jobContacts || !requests || !messages || !consents || !files) return FAILED("records");
+  if (!contacts || !jobContacts || !requests || !messages || !consents || !files) return await fail("records");
 
   const requestIds = requests.map((r) => r.id as string);
   const responses = requestIds.length ? await all("responses", (q) => q.in("request_id", requestIds)) : [];
-  if (!responses) return FAILED("responses");
+  if (!responses) return await fail("responses");
 
   // People: the client's contacts in full, everyone else (staff who handled the work) by name only.
   const contactIds = contacts.map((c) => c.profile_id as string);
@@ -90,7 +106,7 @@ Deno.serve(async (req) => {
   );
 
   const { data: audit, error: auditError } = await db.rpc("admin_client_audit", { p_client: clientId });
-  if (auditError) return FAILED("audit trail");
+  if (auditError) return await fail("audit trail");
 
   // Which stored files can go in: not deleted, and checked clean. The others are listed, with the reason.
   const included: Row[] = [];
@@ -101,7 +117,7 @@ Deno.serve(async (req) => {
     else included.push(f);
   }
   const total = included.reduce((n, f) => n + Number(f.size_bytes ?? 0), 0);
-  if (total > MAX_TOTAL_BYTES) return json(413, { error: "This client's files are too large to export in one go." });
+  if (total > MAX_TOTAL_BYTES) return await tooLarge();
 
   // Split the files into parts.
   const parts: Row[][] = [[]];
@@ -115,7 +131,7 @@ Deno.serve(async (req) => {
     parts[parts.length - 1].push(f);
     size += n;
   }
-  if (parts.length > MAX_PARTS) return json(413, { error: "This client's files are too large to export in one go." });
+  if (parts.length > MAX_PARTS) return await tooLarge();
 
   const json2 = (v: unknown) => strToU8(JSON.stringify(v, null, 2));
   const stamp = new Date().toISOString();
@@ -132,7 +148,6 @@ Deno.serve(async (req) => {
   ].join("\n");
 
   const urls: string[] = [];
-  const stored: string[] = [];
   const used = new Set<string>();
 
   for (let i = 0; i < parts.length; i++) {
@@ -167,7 +182,7 @@ Deno.serve(async (req) => {
 
     for (const f of parts[i]) {
       const { data: blob, error } = await admin.storage.from(BUCKET).download(f.storage_path as string);
-      if (error || !blob) return FAILED("download");
+      if (error || !blob) return await fail("download");
       const base = String(f.original_name).replace(/[\\/:*?"<>|\u0000-\u001f]/g, "-").slice(0, 150) || "file";
       let name = `files/${String(f.id).slice(0, 8)}-${base}`;
       for (let n = 2; used.has(name.toLowerCase()); n++) name = `files/${String(f.id).slice(0, 8)}-${n}-${base}`;
@@ -177,7 +192,7 @@ Deno.serve(async (req) => {
       entry.push(new Uint8Array(await blob.arrayBuffer()), true);
     }
     zip.end();
-    if (zipError) return FAILED("zip");
+    if (zipError) return await fail("zip");
 
     const path = `${crypto.randomUUID()}.zip`;
     const { error: uploadError } = await admin.storage
@@ -185,14 +200,26 @@ Deno.serve(async (req) => {
       .upload(path, new Blob(chunks, { type: "application/zip" }), { contentType: "application/zip" });
     if (uploadError) {
       await admin.storage.from(ZIP_BUCKET).remove(stored);
-      return FAILED("store");
+      return await fail("store");
     }
     stored.push(path);
   }
 
   const removeAll = () => admin.storage.from(ZIP_BUCKET).remove(stored);
 
-  // Fail closed: no audit entry, no download.
+  // The links first: an export only counts as done once there is something to download.
+  for (let i = 0; i < stored.length; i++) {
+    const { data: signed, error } = await admin.storage
+      .from(ZIP_BUCKET)
+      .createSignedUrl(stored[i], 60, { download: stored.length === 1 ? "client-export.zip" : `client-export-part-${i + 1}-of-${stored.length}.zip` });
+    if (error || !signed) {
+      await removeAll();
+      return await fail("sign");
+    }
+    urls.push(signed.signedUrl);
+  }
+
+  // Then the record. Fail closed: no audit entry, no download, so the zips are removed and the links stop working.
   const { error: logError } = await db.rpc("log_event", {
     p_action: "client_export",
     p_entity: "clients",
@@ -201,18 +228,7 @@ Deno.serve(async (req) => {
   });
   if (logError) {
     await removeAll();
-    return FAILED("log");
-  }
-
-  for (let i = 0; i < stored.length; i++) {
-    const { data: signed, error } = await admin.storage
-      .from(ZIP_BUCKET)
-      .createSignedUrl(stored[i], 60, { download: stored.length === 1 ? "client-export.zip" : `client-export-part-${i + 1}-of-${stored.length}.zip` });
-    if (error || !signed) {
-      await removeAll();
-      return FAILED("sign");
-    }
-    urls.push(signed.signedUrl);
+    return await fail("log");
   }
 
   // Tidy up once the links have expired.
