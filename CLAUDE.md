@@ -80,3 +80,6 @@ To staff (rules set by Craig, built in Prompt 7):
 3. Works at 375px width
 4. No sensitive data in logs/URLs/emails
 5. Audit trail written for anything a client submits or downloads
+
+## Git workflow
+Commit small changes directly to main; use a branch only when asked.

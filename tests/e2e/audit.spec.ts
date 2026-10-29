@@ -352,11 +352,13 @@ test("the export and CSV downloads work from the page, and a failed download say
   await page.goto(`/admin/audit?client=${f.clientId}`);
   const [csv] = await Promise.all([page.waitForEvent("download"), page.getByTestId("audit-export").click()]);
   expect(csv.suggestedFilename()).toMatch(/^audit-log-\d{4}-\d{2}-\d{2}\.csv$/);
+  await expect(page.getByTestId("audit-export-status")).toHaveText("Your download has started");
 
   // ...and when the server fails
   await page.route("**/admin/audit/export**", (route) => route.fulfill({ status: 503, body: "unavailable" }));
   await page.getByTestId("audit-export").click();
   await expect(page.getByTestId("audit-export-error")).toHaveText("Sorry, that download didn't work — please try again.");
+  await expect(page.getByTestId("audit-export-status")).toHaveCount(0);
 });
 
 test("the smoke-check function does a storage round trip with the shared secret and refuses everyone else", async () => {
