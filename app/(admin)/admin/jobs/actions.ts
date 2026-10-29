@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { PARTNER_FIRM_PATTERN } from "@/lib/consents";
 import { createClient } from "@/lib/supabase/server";
 import {
   FINANCE_STAGES,
@@ -52,6 +53,7 @@ function requestInput(formData: FormData) {
     question_type: formData.get("question_type") || null,
     options: parseOptions(String(formData.get("options") ?? "")),
     consent_type: formData.get("consent_type") || null,
+    partner_firm: formData.get("partner_firm") || null,
     due_date: formData.get("due_date") ?? "",
   };
 }
@@ -152,11 +154,14 @@ export async function returnRequest(
 
 export async function addPendingRequest(jobId: string, index: number, formData: FormData) {
   const due = String(formData.get("due_date") ?? "").trim();
+  // Only a regulated referral takes a firm; the database insists on one and rejects unusable names.
+  const firm = String(formData.get("partner_firm") ?? "").trim();
   const supabase = await createClient();
   await supabase.rpc("add_pending_request", {
     p_job_id: jobId,
     p_index: index,
     p_due_date: /^\d{4}-\d{2}-\d{2}$/.test(due) ? due : undefined,
+    p_partner_firm: PARTNER_FIRM_PATTERN.test(firm) ? firm : undefined,
   });
   refresh(jobId);
 }

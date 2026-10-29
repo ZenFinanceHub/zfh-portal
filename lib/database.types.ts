@@ -359,6 +359,26 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"portal_settings": {
+                  Row: {
+                    "id": boolean,"privacy_notice_url": string | null,"updated_at": string,"updated_by": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "id"?: boolean,"privacy_notice_url"?: string | null,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Update: {
+                    "id"?: boolean,"privacy_notice_url"?: string | null,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "portal_settings_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"profiles": {
                   Row: {
                     "created_at": string,"email": string,"email_reminders": boolean,"full_name": string | null,"id": string,"is_staff": boolean,"phone": string | null,"staff_areas": (string)[],"staff_role": string | null
@@ -389,14 +409,14 @@ isOneToOne: false
                   ]
                 },"requests": {
                   Row: {
-                    "consent_type": string | null,"created_at": string,"created_by": string | null,"due_date": string | null,"help_text": string | null,"id": string,"job_id": string,"kind": string,"options": Json | null,"question_type": string | null,"return_reason": string | null,"sort_order": number,"status": string,"submitted_at": string | null,"submitted_by": string | null,"title": string
+                    "consent_type": string | null,"created_at": string,"created_by": string | null,"due_date": string | null,"help_text": string | null,"id": string,"job_id": string,"kind": string,"options": Json | null,"partner_firm": string | null,"question_type": string | null,"return_reason": string | null,"sort_order": number,"status": string,"submitted_at": string | null,"submitted_by": string | null,"title": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "consent_type"?: string | null,"created_at"?: string,"created_by"?: string | null,"due_date"?: string | null,"help_text"?: string | null,"id"?: string,"job_id": string,"kind": string,"options"?: Json | null,"question_type"?: string | null,"return_reason"?: string | null,"sort_order"?: number,"status"?: string,"submitted_at"?: string | null,"submitted_by"?: string | null,"title": string
+                    "consent_type"?: string | null,"created_at"?: string,"created_by"?: string | null,"due_date"?: string | null,"help_text"?: string | null,"id"?: string,"job_id": string,"kind": string,"options"?: Json | null,"partner_firm"?: string | null,"question_type"?: string | null,"return_reason"?: string | null,"sort_order"?: number,"status"?: string,"submitted_at"?: string | null,"submitted_by"?: string | null,"title": string
                   }
                   Update: {
-                    "consent_type"?: string | null,"created_at"?: string,"created_by"?: string | null,"due_date"?: string | null,"help_text"?: string | null,"id"?: string,"job_id"?: string,"kind"?: string,"options"?: Json | null,"question_type"?: string | null,"return_reason"?: string | null,"sort_order"?: number,"status"?: string,"submitted_at"?: string | null,"submitted_by"?: string | null,"title"?: string
+                    "consent_type"?: string | null,"created_at"?: string,"created_by"?: string | null,"due_date"?: string | null,"help_text"?: string | null,"id"?: string,"job_id"?: string,"kind"?: string,"options"?: Json | null,"partner_firm"?: string | null,"question_type"?: string | null,"return_reason"?: string | null,"sort_order"?: number,"status"?: string,"submitted_at"?: string | null,"submitted_by"?: string | null,"title"?: string
                   }
                   Relationships: [
                     {
@@ -480,7 +500,7 @@ isOneToOne: false
           }
           Functions: {
             "add_pending_request":
-{ Args: { "p_due_date"?: string,"p_index": number,"p_job_id": string }; Returns: string
+{ Args: { "p_due_date"?: string,"p_index": number,"p_job_id": string,"p_partner_firm"?: string }; Returns: string
                            },
 "admin_audit":
 { Args: { "p_action"?: string,"p_actor"?: string,"p_area"?: string,"p_client"?: string,"p_from"?: string,"p_limit"?: number,"p_offset"?: number,"p_to"?: string }; Returns: {
@@ -568,6 +588,9 @@ isOneToOne: false
 "discard_failed_upload":
 { Args: { "p_file_id": string }; Returns: undefined
                            },
+"get_privacy_notice_url":
+{ Args: Record<PropertyKey, never>; Returns: string
+                           },
 "insert_request_from_blueprint":
 { Args: { "b": Json,"p_due_date": string,"p_job_id": string,"p_sort": number }; Returns: string
                            },
@@ -603,6 +626,9 @@ isOneToOne: false
                            },
 "request_user_agent":
 { Args: Record<PropertyKey, never>; Returns: string
+                           },
+"set_privacy_notice_url":
+{ Args: { "p_url": string }; Returns: undefined
                            },
 "set_staff_areas":
 { Args: { "p_areas": (string)[],"p_profile_id": string }; Returns: undefined

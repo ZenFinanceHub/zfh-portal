@@ -1,11 +1,19 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { startTransition, useActionState, useState } from "react";
 import type { FormState } from "../actions";
 import { RequestFields, emptyRequestFields, type RequestFieldValues } from "@/components/admin/request-fields";
 import { inputClass, primaryButtonClass, secondaryButtonClass } from "@/components/ui/styles";
 
 type Action = (prev: FormState, formData: FormData) => Promise<FormState>;
+
+// React empties a form after its action runs, which would put the drop-downs back to their first choice while the
+// page still shows the old choice. Sending the data by hand keeps what was chosen when a message needs fixing.
+const sendByHand = (formAction: (data: FormData) => void) => (e: React.FormEvent<HTMLFormElement>) => {
+  e.preventDefault();
+  const data = new FormData(e.currentTarget);
+  startTransition(() => formAction(data));
+};
 
 function Feedback({ state }: { state: FormState }) {
   return state.error ? (
@@ -39,7 +47,7 @@ function AddRequestInner({ action, onClose }: { action: Action; onClose: () => v
 
   // After a successful add, the parent remounts this component (key = version) to clear the form.
   return (
-    <form action={formAction} className="space-y-4 rounded-xl border border-line bg-surface p-4" noValidate>
+    <form onSubmit={sendByHand(formAction)} className="space-y-4 rounded-xl border border-line bg-surface p-4" noValidate>
       <h3 className="text-lg font-semibold">Add a request</h3>
       <RequestFields idPrefix="add" value={fields} onChange={setFields} named errors={state.fieldErrors} />
       <DueDate id="add-due" value={due} onChange={setDue} error={state.fieldErrors?.due_date} />
@@ -100,7 +108,7 @@ export function EditRequest({
   return (
     <details className="rounded-lg border border-line">
       <summary className="flex min-h-11 cursor-pointer items-center px-4 text-base text-gold">Edit request</summary>
-      <form action={formAction} className="space-y-4 border-t border-line p-4" noValidate>
+      <form onSubmit={sendByHand(formAction)} className="space-y-4 border-t border-line p-4" noValidate>
         <RequestFields idPrefix={`edit-${requestId}`} value={fields} onChange={setFields} named lockKind errors={state.fieldErrors} />
         <DueDate id={`edit-due-${requestId}`} value={due} onChange={setDue} error={state.fieldErrors?.due_date} />
         <Feedback state={state} />

@@ -40,7 +40,18 @@ const confirm = z
   );
 
 const requestItem = z.object({
-  kind: z.enum(["upload", "question", "approval"]).describe("upload = client sends documents; question = client answers; approval = client approves something"),
+  kind: z
+    .enum(["upload", "question", "approval", "consent"])
+    .describe(
+      "upload = client sends documents; question = client answers; approval = client approves something; consent = ONLY a regulated referral (introducing the client to a partner firm), which also needs consent_type 'regulated_referral' and partner_firm",
+    ),
+  consent_type: z.enum(["regulated_referral"]).optional().describe("Only for kind consent: always regulated_referral. No other consent can be added here."),
+  partner_firm: z
+    .string()
+    .min(2)
+    .max(120)
+    .optional()
+    .describe("Required for a regulated referral: the exact name of the firm the client will be introduced to, as Craig gave it. No < > { } characters."),
   title: z.string().min(1).max(200).describe("What the client sees as the task. Plain English, no jargon, no amounts, account numbers or UTRs."),
   help_text: z.string().max(1000).optional().describe("A short, friendly explanation for the client. Plain English."),
   question_type: z.enum(["text", "yes_no", "choice", "date", "amount"]).optional().describe("Required when kind is question"),
@@ -107,7 +118,7 @@ export function buildServer(db: Db) {
         "RULES: (1) Write each title and help_text in plain English for the client, in your own words. Never copy a lender's wording, and never put amounts, account numbers, UTRs or names in them. " +
         "(2) Put the lender's or other source's original text, exactly as Craig pasted it, in lender_text: it is saved as an internal staff-only note. " +
         "(3) ALWAYS call first without confirm to get a preview, show Craig the preview in full, and only call again with confirm=true after he explicitly says to send. " +
-        "Consent requests cannot be added here.",
+        "The only consent that can be added here is a regulated referral, and it must name the partner firm: ask Craig for the firm's name, never guess it. Other consents are added in the portal.",
       inputSchema: {
         job_id: id("job_id"),
         requests: z.array(requestItem).min(1).max(25),

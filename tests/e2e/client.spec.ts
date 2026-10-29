@@ -319,7 +319,7 @@ test("an owner gives a consent with the server's wording; a returned request sho
 
   const { data: consent } = await admin.from("consents").select("*").eq("request_id", consentId).single();
   expect(consent?.consent_type).toBe("lender_share");
-  expect(consent?.wording_version).toMatch(/^lender_share-DRAFT-/);
+  expect(consent?.wording_version).toBe("lender_share-v1");
   expect(consent?.wording_text).toContain("Sharing your information with lenders");
   expect(consent?.profile_id).toBe(s.ownerId);
   expect(consent?.ip).toBeTruthy();

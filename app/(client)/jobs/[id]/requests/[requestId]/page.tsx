@@ -7,7 +7,7 @@ import { QuestionRequest } from "./question-request";
 import { UploadRequest } from "./upload-request";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { cardClass, primaryButtonInlineClass } from "@/components/ui/styles";
-import { CONSENTS } from "@/lib/consents";
+import { wordingFor } from "@/lib/consents";
 import { countOpenItems } from "@/lib/client/open-items";
 import { formatDate } from "@/lib/labels";
 import { createClient } from "@/lib/supabase/server";
@@ -209,8 +209,9 @@ export default async function RequestPage({
   }
 
   // consent
-  const wording = request.consent_type ? CONSENTS[request.consent_type] : null;
+  const wording = request.consent_type ? wordingFor(request.consent_type, request.partner_firm) : null;
   if (!wording) notFound();
+  const { data: privacyUrl } = await supabase.rpc("get_privacy_notice_url");
   return (
     <>
       {header}
@@ -218,11 +219,25 @@ export default async function RequestPage({
         <AutoRefresh active={stillChecking} />
         {documentList}
         {blockedNote}
-        <div className={`${cardClass} space-y-3`}>
+        <div className={`${cardClass} space-y-3`} data-testid="consent-wording">
           <h2 className="text-xl font-semibold">{wording.heading}</h2>
           {wording.paragraphs.map((p) => (
             <p key={p}>{p}</p>
           ))}
+          {wording.bullets.length ? (
+            <ul className="list-disc space-y-2 pl-6">
+              {wording.bullets.map((b) => (
+                <li key={b}>{b}</li>
+              ))}
+            </ul>
+          ) : null}
+          {privacyUrl ? (
+            <p>
+              <a href={privacyUrl} target="_blank" rel="noopener noreferrer" className="text-gold-light underline underline-offset-2">
+                How we handle your information
+              </a>
+            </p>
+          ) : null}
         </div>
         {isOwner ? (
           <ConsentForm requestId={requestId} agreeLabel={wording.agreeLabel} blocked={blocked} />

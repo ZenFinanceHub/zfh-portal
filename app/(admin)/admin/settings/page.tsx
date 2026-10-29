@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ConnectedApps } from "./connected-apps";
 import { NotificationSettings } from "./notifications";
+import { PrivacyNotice } from "./privacy-notice";
 import { StaffRow } from "./staff-row";
 import { cardClass } from "@/components/ui/styles";
 import { getMyAreas } from "@/lib/admin/areas";
@@ -10,6 +11,7 @@ import { createClient } from "@/lib/supabase/server";
 const TABS = [
   { id: "staff", label: "Staff" },
   { id: "notifications", label: "Notifications" },
+  { id: "privacy", label: "Privacy notice" },
   { id: "connected", label: "Connected apps" },
 ] as const;
 
@@ -28,7 +30,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   }
 
   const { tab: requested } = await searchParams;
-  const tab = requested === "notifications" || requested === "connected" ? requested : "staff";
+  const tab = requested === "notifications" || requested === "connected" || requested === "privacy" ? requested : "staff";
 
   return (
     <>
@@ -48,7 +50,15 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         ))}
       </nav>
 
-      {tab === "notifications" ? <NotificationSettings /> : tab === "connected" ? <ConnectedApps /> : <StaffTab />}
+      {tab === "notifications" ? (
+        <NotificationSettings />
+      ) : tab === "privacy" ? (
+        <PrivacyNotice />
+      ) : tab === "connected" ? (
+        <ConnectedApps />
+      ) : (
+        <StaffTab />
+      )}
     </>
   );
 }

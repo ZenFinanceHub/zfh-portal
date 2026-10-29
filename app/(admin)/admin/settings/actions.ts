@@ -79,6 +79,26 @@ export async function removeBankHoliday(region: string, date: string): Promise<v
   revalidatePath("/admin/settings");
 }
 
+// ── Privacy notice link ──────────────────────────────────────
+const privacyUrlSchema = z
+  .string()
+  .trim()
+  .max(500, "That address is too long.")
+  .refine((v) => v === "" || /^https:\/\/[A-Za-z0-9][^\s<>"']*$/.test(v), "Enter an address that starts with https://");
+
+// Admin only: set_privacy_notice_url() checks, and records that it changed (not the address itself).
+export async function savePrivacyNoticeUrl(_prev: NotificationState, formData: FormData): Promise<NotificationState> {
+  const parsed = privacyUrlSchema.safeParse(String(formData.get("privacy_notice_url") ?? ""));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Enter an address that starts with https://" };
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("set_privacy_notice_url", { p_url: parsed.data });
+  if (error) return { error: "We couldn't save that. Only the admin can change this." };
+
+  revalidatePath("/admin/settings");
+  return { ok: true };
+}
+
 // ── Connected apps ───────────────────────────────────────────
 // Admin only (the database checks). The grant stops working at once; for the admin's own connection the Supabase
 // consent and tokens are ended through Supabase's own call too.

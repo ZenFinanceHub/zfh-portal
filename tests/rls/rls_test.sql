@@ -1649,6 +1649,130 @@ select pg_temp.check((select count(*) from public.audit_log where action = 'clie
                                        and meta::text ~* 'name|body|answer'),
                      'a failed export is recorded with who and which client, never any content');
 
+-- ── Consent wording v1 (0011): the partner firm, and the privacy notice link ──
+-- A regulated referral cannot exist without a usable firm name, and only a regulated referral carries one.
+reset role;
+select pg_temp.check(pg_temp.fails($q$insert into public.requests (job_id, kind, title, consent_type)
+                                        values ('a1a1a1a1-0000-0000-0000-000000000001', 'consent', 'No firm', 'regulated_referral')$q$)
+                     and pg_temp.fails($q$insert into public.requests (job_id, kind, title, consent_type, partner_firm)
+                                           values ('a1a1a1a1-0000-0000-0000-000000000001', 'consent', 'Blank firm', 'regulated_referral', '   ')$q$)
+                     and pg_temp.fails($q$insert into public.requests (job_id, kind, title, consent_type, partner_firm)
+                                           values ('a1a1a1a1-0000-0000-0000-000000000001', 'consent', 'Markup firm', 'regulated_referral', '<b>Evil</b> Ltd')$q$)
+                     and pg_temp.fails($q$insert into public.requests (job_id, kind, title, consent_type, partner_firm)
+                                           values ('a1a1a1a1-0000-0000-0000-000000000001', 'consent', 'Brace firm', 'regulated_referral', 'Evil {firm} Ltd')$q$)
+                     and pg_temp.fails($q$insert into public.requests (job_id, kind, title, consent_type, partner_firm)
+                                           values ('a1a1a1a1-0000-0000-0000-000000000001', 'consent', 'Padded firm', 'regulated_referral', ' Acme ')$q$)
+                     and pg_temp.fails($q$insert into public.requests (job_id, kind, title, consent_type, partner_firm)
+                                           values ('a1a1a1a1-0000-0000-0000-000000000001', 'consent', 'Long firm', 'regulated_referral', repeat('x', 121))$q$)
+                     and pg_temp.fails($q$insert into public.requests (job_id, kind, title, partner_firm)
+                                           values ('a1a1a1a1-0000-0000-0000-000000000001', 'upload', 'Firm on an upload', 'Acme Mortgages')$q$)
+                     and pg_temp.fails($q$insert into public.requests (job_id, kind, title, consent_type, partner_firm)
+                                           values ('a1a1a1a1-0000-0000-0000-000000000001', 'consent', 'Firm on lender consent', 'lender_share', 'Acme Mortgages')$q$),
+                     'a regulated referral needs a usable firm name (no blank, no markup characters), and only a referral can carry one');
+insert into public.requests (id, job_id, kind, title, consent_type, partner_firm) values
+  ('c1c1c1c1-0000-0000-0000-000000000001', 'a1a1a1a1-0000-0000-0000-000000000001', 'consent', 'Referral with firm',
+   'regulated_referral', 'Acme Mortgages & Co');
+select pg_temp.check(pg_temp.fails($q$update public.requests set partner_firm = null where id = 'c1c1c1c1-0000-0000-0000-000000000001'$q$)
+                     and pg_temp.fails($q$update public.requests set consent_type = 'lender_share' where id = 'c1c1c1c1-0000-0000-0000-000000000001'$q$),
+                     'an existing referral cannot lose its firm name or turn into a different consent while keeping it');
+
+-- A template cannot name the firm, so its regulated referral waits in "Add later" until staff add it with a firm.
+set role authenticated;
+select pg_temp.token(:adminid, null, 'aal2');
+create temp table pg_temp.referral_job as
+  select public.create_job_from_template('a3a3a3a3-0000-0000-0000-000000000000',
+           (select id from public.templates where name = 'Regulated referral'), 'Referral from template', 'regulated_referral', null, null, null) as id;
+grant select on pg_temp.referral_job to authenticated;
+select pg_temp.check((select count(*) from public.requests where job_id = (select id from pg_temp.referral_job)) = 1
+                     and not exists (select 1 from public.requests where job_id = (select id from pg_temp.referral_job) and kind = 'consent')
+                     and (select jsonb_array_length(pending_blueprints) from public.jobs where id = (select id from pg_temp.referral_job)) = 1,
+                     'creating a job from the referral template adds the question now and holds the referral for "Add later"');
+select pg_temp.check(pg_temp.denied_with($q$select public.add_pending_request((select id from pg_temp.referral_job), 0, null)$q$,
+                                         'Enter the name of the partner firm')
+                     and pg_temp.fails($q$select public.add_pending_request((select id from pg_temp.referral_job), 0, null, '<script>')$q$)
+                     and (select jsonb_array_length(pending_blueprints) from public.jobs where id = (select id from pg_temp.referral_job)) = 1,
+                     'a held referral cannot be added without a usable firm name, and stays held');
+select public.add_pending_request((select id from pg_temp.referral_job), 0, null, '  Harbour Advisers Ltd ');
+reset role;
+select pg_temp.check((select partner_firm from public.requests where job_id = (select id from pg_temp.referral_job) and kind = 'consent') = 'Harbour Advisers Ltd'
+                     and (select jsonb_array_length(pending_blueprints) from public.jobs where id = (select id from pg_temp.referral_job)) = 0,
+                     'adding the held referral with a firm stores the (trimmed) firm on the request');
+
+-- Giving the consent stores the filled-in wording, with the firm as the recipient (taken from the request, not the caller).
+set role authenticated;
+select pg_temp.token(:ownerid, null, 'aal1');
+select pg_temp.check(pg_temp.denied_with(format($q$select public.record_consent(%L, 'regulated_referral-v1', 'Being introduced to Someone Else', 'Someone Else')$q$,
+                       (select id from public.requests where job_id = (select id from pg_temp.referral_job) and kind = 'consent')),
+                       'The wording must name the partner firm'),
+                     'a referral consent whose wording does not name the request''s firm is refused');
+select public.record_consent((select id from public.requests where job_id = (select id from pg_temp.referral_job) and kind = 'consent'),
+  'regulated_referral-v1', E'Being introduced to Harbour Advisers Ltd\n\nI agree that Zen Commercial Finance Ltd can pass my name to Harbour Advisers Ltd.',
+  'Not the firm');
+reset role;
+select pg_temp.check((select recipient from public.consents where wording_version = 'regulated_referral-v1'
+                        and job_id = (select id from pg_temp.referral_job)) = 'Harbour Advisers Ltd'
+                     and (select wording_text from public.consents where wording_version = 'regulated_referral-v1'
+                            and job_id = (select id from pg_temp.referral_job)) like '%Harbour Advisers Ltd%',
+                     'the consent records the wording the client saw and the request''s firm as the recipient');
+select pg_temp.check((select count(*) from public.consents where wording_version = 'v1' and recipient = 'Lender panel') >= 1,
+                     'consents recorded under earlier wording are untouched');
+
+-- The connector may add a regulated referral (only that consent), and only with the firm named.
+set role authenticated;
+select pg_temp.token(:adminid, :claude, 'aal1');
+select pg_temp.check(pg_temp.fails($q$select public.connector_add_requests('a1a1a1a1-0000-0000-0000-000000000001',
+                         '[{"kind":"consent","consent_type":"regulated_referral","title":"Meet our partner"}]'::jsonb, null, true)$q$)
+                     and pg_temp.fails($q$select public.connector_add_requests('a1a1a1a1-0000-0000-0000-000000000001',
+                         '[{"kind":"consent","consent_type":"lender_share","title":"Lenders","partner_firm":"Acme"}]'::jsonb, null, true)$q$)
+                     and pg_temp.fails($q$select public.connector_add_requests('a1a1a1a1-0000-0000-0000-000000000001',
+                         '[{"kind":"consent","consent_type":"engagement_letter","title":"Letter"}]'::jsonb, null, true)$q$)
+                     and pg_temp.fails($q$select public.connector_add_requests('a1a1a1a1-0000-0000-0000-000000000001',
+                         '[{"kind":"consent","consent_type":"regulated_referral","title":"Meet our partner","partner_firm":"<i>x</i>"}]'::jsonb, null, true)$q$),
+                     'the connector cannot add a referral without a firm, a markup firm, or any other consent');
+select pg_temp.check((public.connector_add_requests('a1a1a1a1-0000-0000-0000-000000000001',
+        '[{"kind":"consent","consent_type":"regulated_referral","title":"Meet our partner","partner_firm":"Quay Finance Ltd"}]'::jsonb)
+        -> 'would_add' -> 0 ->> 'partner_firm') = 'Quay Finance Ltd',
+                     'the connector preview of a referral shows the firm');
+select public.connector_add_requests('a1a1a1a1-0000-0000-0000-000000000001',
+  '[{"kind":"consent","consent_type":"regulated_referral","title":"Meet our partner","partner_firm":"Quay Finance Ltd"}]'::jsonb, null, true);
+reset role;
+select pg_temp.check((select count(*) from public.requests where job_id = 'a1a1a1a1-0000-0000-0000-000000000001'
+                        and kind = 'consent' and consent_type = 'regulated_referral' and partner_firm = 'Quay Finance Ltd') = 1,
+                     'a confirmed connector referral is stored with its firm');
+
+-- The privacy notice link: admin only to change, readable by anyone signed in, https only, audited without the address.
+set role authenticated;
+select pg_temp.token(:ownerid, null, 'aal1');
+select pg_temp.check(public.get_privacy_notice_url() is null, 'a client can read the privacy notice link (none set yet)');
+select pg_temp.check(pg_temp.denied($q$select public.set_privacy_notice_url('https://example.com/privacy')$q$)
+                     and pg_temp.denied($q$select * from public.portal_settings$q$)
+                     and pg_temp.denied($q$update public.portal_settings set privacy_notice_url = 'https://example.com/privacy'$q$),
+                     'a client cannot change the privacy notice link or read the settings table');
+select pg_temp.token(:accid, null, 'aal2');
+select pg_temp.check(pg_temp.denied($q$select public.set_privacy_notice_url('https://example.com/privacy')$q$),
+                     'staff who are not the admin cannot change the privacy notice link');
+select pg_temp.token(:adminid, :claude, 'aal1');
+select pg_temp.check(pg_temp.denied($q$select public.set_privacy_notice_url('https://example.com/privacy')$q$),
+                     'a connector token cannot change the privacy notice link');
+select pg_temp.token(:adminid, null, 'aal2');
+select pg_temp.check(pg_temp.fails($q$select public.set_privacy_notice_url('javascript:alert(1)')$q$)
+                     and pg_temp.fails($q$select public.set_privacy_notice_url('http://example.com/privacy')$q$)
+                     and pg_temp.fails($q$select public.set_privacy_notice_url('https://example.com/a b')$q$)
+                     and pg_temp.fails($q$select public.set_privacy_notice_url('https://example.com/"onmouseover="x')$q$),
+                     'the privacy notice link must be an https address with no spaces or quote characters');
+select public.set_privacy_notice_url(' https://example.com/privacy ');
+select pg_temp.check(public.get_privacy_notice_url() = 'https://example.com/privacy', 'the admin can set the privacy notice link');
+select pg_temp.token(:ownerid, null, 'aal1');
+select pg_temp.check(public.get_privacy_notice_url() = 'https://example.com/privacy', 'a client sees the link the admin set');
+select pg_temp.token(:adminid, null, 'aal2');
+select public.set_privacy_notice_url('');
+select pg_temp.check(public.get_privacy_notice_url() is null, 'clearing the link removes it');
+reset role;
+select pg_temp.check((select count(*) from public.audit_log where action = 'privacy_notice_url_changed'
+                        and actor_id = '00000000-0000-0000-0000-00000000000a') = 2
+                     and not exists (select 1 from public.audit_log where action = 'privacy_notice_url_changed' and meta::text ~* 'example|http'),
+                     'each change to the privacy notice link is audited, without the address');
+
 -- ── Coverage of every table and function ──
 select pg_temp.check(not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
                                   where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity),
@@ -1669,8 +1793,8 @@ select pg_temp.check((select array_agg(p.proname::text order by p.proname) from 
                              'connector_check', 'connector_create_job', 'connector_expire', 'connector_gate', 'connector_list_jobs',
                              'connector_outstanding', 'connector_rate_limit', 'connector_record_grant', 'connector_revoke_grant',
                              'connector_search_clients', 'connector_send_message', 'create_job_from_template', 'discard_failed_upload',
-                             'is_admin', 'is_client_owner', 'is_staff', 'log_audit_export', 'log_audit_export_failed', 'log_event', 'rate_limit_magic_link',
-                             'rate_limit_mfa', 'record_consent', 'request_ip', 'request_user_agent', 'set_staff_areas',
+                             'get_privacy_notice_url', 'is_admin', 'is_client_owner', 'is_staff', 'log_audit_export', 'log_audit_export_failed', 'log_event', 'rate_limit_magic_link',
+                             'rate_limit_mfa', 'record_consent', 'request_ip', 'request_user_agent', 'set_privacy_notice_url', 'set_staff_areas',
                              'staff_can_access_area', 'staff_can_access_client', 'staff_can_access_job', 'staff_can_access_optional_job',
                              'staff_has_any_area', 'submit_request', 'touch_updated_at'],
                      'signed-in users can run exactly the reviewed list of functions');

@@ -22,6 +22,7 @@ export const ACTION_FILTERS: { value: string; label: string }[] = [
   { value: "file_deleted_retention", label: "A file was deleted under retention" },
   { value: "staff_areas_changed", label: "A team member's areas changed" },
   { value: "notification_settings_changed", label: "Email rules changed" },
+  { value: "privacy_notice_url_changed", label: "The privacy notice link changed" },
   { value: "bank_holiday_added", label: "A bank holiday was added" },
   { value: "bank_holiday_removed", label: "A bank holiday was removed" },
   { value: "connector_approved", label: "Claude was approved" },

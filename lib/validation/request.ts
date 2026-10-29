@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PARTNER_FIRM_MESSAGE, PARTNER_FIRM_PATTERN } from "@/lib/consents";
 
 export const REQUEST_KINDS = ["upload", "question", "approval", "consent"] as const;
 export const QUESTION_TYPES = ["text", "yes_no", "choice", "date", "amount"] as const;
@@ -31,6 +32,8 @@ const requestShape = {
   question_type: z.enum(QUESTION_TYPES).nullish(),
   options: z.array(z.string().trim().min(1).max(200)).max(20).nullish(),
   consent_type: z.enum(CONSENT_TYPES).nullish(),
+  // The firm a regulated referral introduces the client to. Required for that consent (checked below) and nothing else.
+  partner_firm: z.string().trim().max(120, "Must be 120 characters or fewer").nullish(),
 };
 
 type Shape = {
@@ -38,7 +41,10 @@ type Shape = {
   question_type?: string | null;
   options?: string[] | null;
   consent_type?: string | null;
+  partner_firm?: string | null;
 };
+
+const isReferral = (v: Shape) => v.kind === "consent" && v.consent_type === "regulated_referral";
 
 function crossChecks(v: Shape, ctx: z.RefinementCtx) {
   if (v.kind === "question" && !v.question_type) {
@@ -52,8 +58,15 @@ function crossChecks(v: Shape, ctx: z.RefinementCtx) {
   }
 }
 
+/** A request on a job must name the firm for a regulated referral. (A template blueprint cannot: staff add the firm later.) */
+function firmCheck(v: Shape, ctx: z.RefinementCtx) {
+  if (isReferral(v) && !PARTNER_FIRM_PATTERN.test(v.partner_firm ?? "")) {
+    ctx.addIssue({ code: "custom", path: ["partner_firm"], message: PARTNER_FIRM_MESSAGE });
+  }
+}
+
 /** Keeps only the fields that make sense for the kind, so stored data stays tidy. */
-function tidy<T extends Shape & { help_text?: string | null }>(v: T) {
+function tidy<T extends Shape & { help_text?: string | null }>(v: T, keepFirm: boolean) {
   const isQuestion = v.kind === "question";
   return {
     ...v,
@@ -61,6 +74,7 @@ function tidy<T extends Shape & { help_text?: string | null }>(v: T) {
     question_type: isQuestion ? (v.question_type ?? null) : null,
     options: isQuestion && v.question_type === "choice" ? (v.options ?? null) : null,
     consent_type: v.kind === "consent" ? (v.consent_type ?? null) : null,
+    partner_firm: keepFirm && isReferral(v) ? v.partner_firm || null : null,
   };
 }
 
@@ -75,7 +89,8 @@ export const requestSchema = z
       .transform((v) => (v === "" ? null : v)),
   })
   .superRefine(crossChecks)
-  .transform(tidy);
+  .superRefine(firmCheck)
+  .transform((v) => tidy(v, true));
 
 // ── A blueprint in a template ────────────────────────────────
 export const blueprintSchema = z
@@ -85,7 +100,7 @@ export const blueprintSchema = z
   })
   .superRefine(crossChecks)
   .transform((v) => {
-    const t = tidy(v);
+    const t = tidy(v, false);
     // Stored JSON omits empty keys, matching the seeded templates.
     return Object.fromEntries(Object.entries(t).filter(([, val]) => val !== null && val !== undefined));
   });

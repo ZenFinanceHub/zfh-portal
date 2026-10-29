@@ -27,6 +27,7 @@ const toItem = (b: Blueprint, key: number): Item => ({
   question_type: b.question_type ?? "text",
   options_text: (b.options ?? []).join("\n"),
   consent_type: b.consent_type ?? "lender_share",
+  partner_firm: "",
   due_offset_days: b.due_offset_days === undefined ? "" : String(b.due_offset_days),
 });
 
@@ -122,7 +123,7 @@ export function TemplateForm({ action, template }: Props) {
                   </button>
                 </div>
               </div>
-              <RequestFields idPrefix={`bp-${item.key}`} value={item} onChange={(v) => update(item.key, v)} />
+              <RequestFields idPrefix={`bp-${item.key}`} value={item} onChange={(v) => update(item.key, v)} noFirm />
               <div>
                 <label htmlFor={`bp-${item.key}-due`} className="mb-1 block text-base font-medium">
                   Due offset (days after the job starts)

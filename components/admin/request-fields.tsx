@@ -17,6 +17,7 @@ export type RequestFieldValues = {
   question_type: string;
   options_text: string; // one choice per line
   consent_type: string;
+  partner_firm: string;
 };
 
 export const emptyRequestFields: RequestFieldValues = {
@@ -26,6 +27,7 @@ export const emptyRequestFields: RequestFieldValues = {
   question_type: "text",
   options_text: "",
   consent_type: "lender_share",
+  partner_firm: "",
 };
 
 type Props = {
@@ -35,6 +37,8 @@ type Props = {
   /** Form field names are only set when the fields live in a normal form post. */
   named?: boolean;
   lockKind?: boolean;
+  /** Templates cannot name the firm: it is entered when the request is added to a job. */
+  noFirm?: boolean;
   errors?: Partial<Record<string, string>>;
 };
 
@@ -55,7 +59,7 @@ function Row({ id, label, error, hint, children }: { id: string; label: string; 
   );
 }
 
-export function RequestFields({ idPrefix, value, onChange, named, lockKind, errors = {} }: Props) {
+export function RequestFields({ idPrefix, value, onChange, named, lockKind, noFirm, errors = {} }: Props) {
   const set = (patch: Partial<RequestFieldValues>) => onChange({ ...value, ...patch });
   const n = (name: string) => (named ? name : undefined);
 
@@ -149,6 +153,29 @@ export function RequestFields({ idPrefix, value, onChange, named, lockKind, erro
             ))}
           </select>
         </Row>
+      ) : null}
+
+      {value.kind === "consent" && value.consent_type === "regulated_referral" ? (
+        noFirm ? (
+          <p className="text-sm text-text-muted">The firm&apos;s name is entered when this is added to a job.</p>
+        ) : (
+          <Row
+            id={`${idPrefix}-firm`}
+            label="Partner firm (the firm the client is introduced to)"
+            error={errors.partner_firm}
+            hint="Required. The client sees this name in the wording they agree to."
+          >
+            <input
+              id={`${idPrefix}-firm`}
+              name={n("partner_firm")}
+              value={value.partner_firm}
+              onChange={(e) => set({ partner_firm: e.target.value })}
+              autoComplete="off"
+              maxLength={120}
+              className={inputClass}
+            />
+          </Row>
+        )
       ) : null}
     </div>
   );

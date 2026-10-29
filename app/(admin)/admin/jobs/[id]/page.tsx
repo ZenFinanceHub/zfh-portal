@@ -45,7 +45,7 @@ const SCAN_LABELS: Record<string, string> = {
   error: "check failed",
 };
 
-type Blueprint = { kind?: string; title?: string; help_text?: string };
+type Blueprint = { kind?: string; title?: string; help_text?: string; consent_type?: string };
 
 export default async function AdminJobPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -184,6 +184,11 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                   <p className="text-sm text-text-muted">{KIND_LABELS[r.kind]}</p>
                   <h3 className="text-lg font-semibold">{r.title}</h3>
                   {r.help_text ? <p className="text-sm text-text-muted">{r.help_text}</p> : null}
+                  {r.partner_firm ? (
+                    <p className="text-sm text-text-muted" data-testid="partner-firm">
+                      Introduces the client to: {r.partner_firm}
+                    </p>
+                  ) : null}
                   <p className="mt-1 text-base">
                     <span data-testid="request-status">{STATUS_LABELS[r.status]}</span>
                     {r.due_date ? ` · Due ${formatDate(r.due_date)}` : ""}
@@ -248,6 +253,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                         question_type: r.question_type ?? "text",
                         options_text: Array.isArray(r.options) ? r.options.join("\n") : "",
                         consent_type: r.consent_type ?? "lender_share",
+                        partner_firm: r.partner_firm ?? "",
                       }}
                     />
                   ) : null}
@@ -278,6 +284,23 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                   <p className="text-base font-medium">{b.title}</p>
                   {b.help_text ? <p className="text-sm text-text-muted">{b.help_text}</p> : null}
                   <form action={addPendingRequest.bind(null, id, i)} className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
+                    {b.kind === "consent" && b.consent_type === "regulated_referral" ? (
+                      <div>
+                        <label htmlFor={`pending-firm-${i}`} className="mb-1 block text-sm text-text-muted">
+                          Partner firm (required)
+                        </label>
+                        <input
+                          id={`pending-firm-${i}`}
+                          name="partner_firm"
+                          required
+                          minLength={2}
+                          maxLength={120}
+                          pattern="[^<>{}]+"
+                          autoComplete="off"
+                          className={inputClass}
+                        />
+                      </div>
+                    ) : null}
                     <div>
                       <label htmlFor={`pending-due-${i}`} className="mb-1 block text-sm text-text-muted">
                         Due date (optional)
