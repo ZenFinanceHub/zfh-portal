@@ -36,6 +36,15 @@ It lists names and SHA-256 digests (never values). There must be no `NOTIFY_TRAN
 value in `supabase/functions/.env` (hash each local value with SHA-256 and compare). Then check one sweep returns 200: from the SQL editor run
 `select private.call_notify_function('{"mode":"sweep"}'::jsonb);` and read the newest row of `net._http_response`.
 
+## Running the end-to-end tests
+
+Needs Docker running and local Supabase started (`npx supabase start`). Then `npm run test:e2e` (or `npm run test:e2e:low`, one worker).
+
+`supabase start` does not serve the edge functions, which the export, job-zip, invite and smoke-check tests call. The e2e global setup
+(`tests/e2e/global-setup.ts`) checks for them and, if they are not running, starts `npx supabase functions serve --env-file supabase/functions/.env`
+itself, then stops it and removes its container when the run ends. If you already have `functions serve` running it is left alone. The
+`.env` is the local-only file described above, so copy `supabase/functions/.env.example` first.
+
 ## Notifications
 
 Emails are decided by `send-notifications` using the rules in `notification_settings` and `uk_bank_holidays`, which the admin edits at
